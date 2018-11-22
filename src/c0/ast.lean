@@ -22,9 +22,9 @@ inductive exp
 | nil                             -- an empty expression list
 | cons : exp → exp → exp          -- a comma (e1, ...) in an expression list
 | call : ident → exp → exp        -- a function call $f(e1, ..., en)@
-| field : exp → ident → exp       -- a field access @e.f@
 | deref : exp → exp               -- a pointer dereference @*e@
 | index : exp → exp → exp         -- an array dereference @e1[e2]@
+| field : exp → ident → exp       -- a field access @e.f@
 | alloc_ref : type → exp           -- a pointer allocation @alloc(ty)@
 | alloc_arr : type → exp → exp     -- an array allocation @alloc_array(ty, len)@
 

@@ -59,8 +59,21 @@ end sigma
 
 def int32 := zmod (2^32)
 
+instance int32.has_coe : has_coe int32 ℤ := sorry
+
 instance : comm_ring int32 := by unfold int32; apply_instance
 
 -- TODO: this is unsigned comparison
 instance : decidable_linear_order int32 :=
 by unfold int32 zmod; apply_instance
+
+namespace int32
+def div : int32 → int32 → option int32 := sorry
+def mod : int32 → int32 → option int32 := sorry
+def shl : int32 → int32 → option int32 := sorry
+def shr : int32 → int32 → option int32 := sorry
+def bitwise_and : int32 → int32 → int32 := sorry
+def bitwise_xor : int32 → int32 → int32 := sorry
+def bitwise_or : int32 → int32 → int32 := sorry
+def bitwise_not : int32 → int32 := sorry
+end int32

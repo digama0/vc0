@@ -21,9 +21,9 @@ inductive ok : binop → type → type → Prop
 | mul      : ok mul type.int type.int
 | div      : ok div type.int type.int
 | mod      : ok mod type.int type.int
-| bit_and  : ok bit_and type.int type.int
-| bit_xor  : ok bit_xor type.int type.int
-| bit_or   : ok bit_or type.int type.int
+| band     : ok band type.int type.int
+| bxor     : ok bxor type.int type.int
+| bor      : ok bor type.int type.int
 | shl      : ok shl type.int type.int
 | shr      : ok shr type.int type.int
 | comp {c} : ok (comp c) type.int type.bool
@@ -35,9 +35,9 @@ end binop
 namespace unop
 
 inductive ok : unop → type → type → Prop
-| neg      : ok neg type.int type.int
-| not      : ok not type.bool type.bool
-| bit_not  : ok bit_not type.int type.int
+| neg  : ok neg type.int type.int
+| not  : ok not type.bool type.bool
+| bnot : ok bnot type.int type.int
 
 end unop
 
@@ -62,15 +62,18 @@ inductive get_fdef : ast → ident → fdef → Prop
   option.forall₂ (eval_ty Γ) τ τ' →
   get_fdef Γ f ⟨τs', τ'⟩
 
-inductive get_body : ast → ident → stmt → Prop
-| mk {h f xτs τ body Γ} :
+inductive get_body : ast → ident → list (ident × c0.type) → stmt → Prop
+| mk {h f xτs xτs' τ body Γ} :
   gdecl.fdecl h f xτs τ (some body) ∈ Γ →
-  get_body Γ f body
+  list.forall₂ (prod.forall₂ eq (eval_ty Γ)) xτs xτs' →
+  get_body Γ f xτs' body
 
-inductive is_header : ast → ident → bool → Prop
-| mk {h f xτs τ body Γ} :
-  gdecl.fdecl h f xτs τ body ∈ Γ →
-  is_header Γ f h
+def is_fdef (Γ : ast) (f : ident) : Prop := ∃ xτs s, get_body Γ f xτs s
+
+inductive is_extern : ast → ident → Prop
+| mk {f xτs τ body Γ} :
+  gdecl.fdecl tt f xτs τ body ∈ Γ →
+  is_extern Γ f
 
 inductive get_typedef : ast → ident → type → Prop
 | mk {v τ Γ} : gdecl.typedef v τ ∈ Γ → get_typedef Γ v τ
@@ -108,8 +111,7 @@ def typeable : exp → Prop
 | null := false
 | _ := true
 
-inductive ok (R : ident → Prop) (Γ : ast)
-  (Δ : list (ident × c0.type)) : exp → type → Prop
+inductive ok (Γ : ast) (Δ : list (ident × c0.type)) : exp → type → Prop
 | int {n} : ok (int n) (reg c0.type.int)
 | bool {b} : ok (bool b) (reg c0.type.bool)
 | null {τ} : ok null (reg (ref τ))
@@ -126,7 +128,7 @@ inductive ok (R : ident → Prop) (Γ : ast)
 | cons {e es τ τs} :
   ok e (reg τ) → ok es (ls τs) →
   ok (cons e es) (ls (τ :: τs))
-| call {f es τs τ} : R f → get_fdef Γ f ⟨τs, τ⟩ →
+| call {f es τs τ} : get_fdef Γ f ⟨τs, τ⟩ →
   ok es (ls τs) → ok (call f es) (rego τ)
 | field {s sd f e τ} :
   ok e (reg (struct s)) →
@@ -158,37 +160,68 @@ def use : exp → finset ident
 | (alloc_ref _) := ∅
 | (alloc_arr _ e) := use e
 
+def use_func : exp → finset ident
+| (int _) := ∅
+| (bool _) := ∅
+| null := ∅
+| (var v) := ∅
+| (binop _ e₁ e₂) := use_func e₁ ∪ use_func e₂
+| (unop _ e) := use_func e
+| (cond c e₁ e₂) := use_func c ∪ use_func e₁ ∪ use_func e₂
+| nil := ∅
+| (cons e es) := use_func e ∪ use_func es
+| (call f es) := insert f (use_func es)
+| (field e f) := use_func e
+| (deref e) := use_func e
+| (index e₁ e₂) := use_func e₁ ∪ use_func e₂
+| (alloc_ref _) := ∅
+| (alloc_arr _ e) := use_func e
+
 end exp
 
 namespace stmt
 open c0.type exp.type
 
-inductive ok (R : ident → Prop) (Γ : ast) (ret_τ : option c0.type) : list (ident × c0.type) → stmt → Prop
+inductive ok (Γ : ast) (ret_τ : option c0.type) : list (ident × c0.type) → stmt → Prop
 | decl {Δ v τ τ' s} :
   (∀ τ, (v, τ) ∉ Δ) → eval_ty Γ τ τ' → τ'.small →
   ok ((v, τ') :: Δ) s → ok Δ (decl v τ s)
 | decl_asgn {Δ v e τ τ' s} :
   (∀ τ, (v, τ) ∉ Δ) → eval_ty Γ τ τ' → τ'.small →
-  exp.ok R Γ Δ e (reg τ') →
+  exp.ok Γ Δ e (reg τ') →
   ok ((v, τ') :: Δ) s → ok Δ (decl_asgn v τ e s)
-| If {Δ c s₁ s₂} : exp.ok R Γ Δ c (reg bool) →
+| If {Δ c s₁ s₂} : exp.ok Γ Δ c (reg bool) →
   ok Δ s₁ → ok Δ s₂ → ok Δ (If c s₁ s₂)
-| while {Δ c s} : exp.ok R Γ Δ c (reg bool) →
+| while {Δ c s} : exp.ok Γ Δ c (reg bool) →
   ok Δ s → ok Δ (while c s)
 | asgn {Δ lv e τ} :
-  exp.ok R Γ Δ (lval.to_exp lv) τ → exp.ok R Γ Δ e τ →
+  exp.ok Γ Δ (lval.to_exp lv) τ → exp.ok Γ Δ e τ →
   τ.small → ok Δ (asgn lv e)
 | asnop {Δ lv op e} :
-  exp.ok R Γ Δ (lval.to_exp lv) (reg int) → exp.ok R Γ Δ e (reg int) →
+  exp.ok Γ Δ (lval.to_exp lv) (reg int) → exp.ok Γ Δ e (reg int) →
   binop.ok op int int →
   ok Δ (asnop lv op e)
-| eval {Δ e τ} : exp.ok R Γ Δ e τ → τ.small → ok Δ (eval e)
-| assert {Δ e} : exp.ok R Γ Δ e (reg bool) → ok Δ (assert e)
+| eval {Δ e τ} : exp.ok Γ Δ e τ → τ.small → ok Δ (eval e)
+| assert {Δ e} : exp.ok Γ Δ e (reg bool) → ok Δ (assert e)
 | ret {Δ e} :
-  option.forall₂ (λ e τ, exp.ok R Γ Δ e (reg τ)) e ret_τ →
+  option.forall₂ (λ e τ, exp.ok Γ Δ e (reg τ)) e ret_τ →
   ok Δ (ret e)
 | nop {Δ} : ok Δ nop
 | seq {Δ s₁ s₂} : ok Δ s₁ → ok Δ s₂ → ok Δ (seq s₁ s₂)
+
+def use_func : stmt → finset ident
+| (decl _ _ s) := use_func s
+| (decl_asgn _ _ e s) := e.use_func ∪ use_func s
+| (If c s₁ s₂) := c.use_func ∪ use_func s₁ ∪ use_func s₂
+| (while c s) := c.use_func ∪ use_func s
+| (asgn lv e) := lv.to_exp.use_func ∪ e.use_func
+| (asnop lv _ e) := lv.to_exp.use_func ∪ e.use_func
+| (eval e) := e.use_func
+| (assert e) := e.use_func
+| (ret none) := ∅
+| (ret (some e)) := e.use_func
+| nop := ∅
+| (seq s₁ s₂) := use_func s₁ ∪ use_func s₂
 
 def insert_lv : lval → finset ident → finset ident
 | (lval.var v) δ := insert v δ
@@ -227,15 +260,15 @@ let γ := (Δ.map prod.fst).to_finset in ∃ δ', init γ γ s δ'
 end stmt
 namespace gdecl
 
-inductive ok (R : ident → Prop) (Γ : ast) : gdecl → Prop
+inductive ok (Γ : ast) : gdecl → Prop
 | fdecl (header f xτs xτs' ret ret' body) :
   eval_ty Γ ret ret' →
   (list.map prod.fst xτs).nodup →
   list.forall₂ (prod.forall₂ eq (λ τ τ', eval_ty Γ τ τ' ∧ τ'.small)) xτs xτs' →
   (∀ s ∈ body,
     header = ff ∧
-    (∀ s', ¬ get_body Γ f s') ∧
-    stmt.ok R (fdecl header f xτs ret body :: Γ) ret' xτs' s ∧
+    ¬ is_fdef Γ f ∧
+    stmt.ok (fdecl header f xτs ret body :: Γ) ret' xτs' s ∧
     s.ok_init xτs') →
   ok (fdecl header f xτs ret body)
 | typedef (x τ τ') :
@@ -250,16 +283,18 @@ inductive ok (R : ident → Prop) (Γ : ast) : gdecl → Prop
 
 end gdecl
 
-inductive ok' (R : ident → Prop) : ast → ast → Prop
+inductive ok' : ast → ast → Prop
 | nil {Γ} : ok' Γ []
-| cons {Γ d ds} : gdecl.ok R Γ d → ok' (d :: Γ) ds → ok' Γ (d :: ds)
+| cons {Γ d ds} : gdecl.ok Γ d → ok' (d :: Γ) ds → ok' Γ (d :: ds)
 
 structure ok (Γ : ast) : Prop :=
-(gdecls : ok' (λ i, ∃ s, Γ.get_body i s) [] Γ)
+(gdecls : ok' [] Γ)
 (fdef_uniq : ∀ i fd fd', Γ.get_fdef i fd → Γ.get_fdef i fd' → fd = fd')
-(header_no_def : ∀ i, Γ.is_header i tt → ∀ s, ¬ Γ.get_body i s)
+(header_no_def : ∀ i, Γ.is_extern i → ¬ Γ.is_fdef i)
 (fdef_tdef : ∀ i fd, Γ.get_fdef i fd → ∀ τ, ¬ Γ.get_typedef i τ)
-(main : Γ.get_fdef main ⟨[], c0.type.int⟩ ∧ ∃ s, Γ.get_body main s)
+(use_def : ∀ f xτs s, Γ.get_body f xτs s → ∀ g ∈ s.use_func,
+  Γ.is_extern g ∨ Γ.is_fdef g)
+(main : Γ.get_fdef main ⟨[], c0.type.int⟩ ∧ Γ.is_fdef main)
 
 end ast
 
