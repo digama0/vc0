@@ -30,6 +30,9 @@ inductive ok : binop → type → type → Prop
 | eq {τ:type} : τ.small → ok (comp comp.eq) τ type.bool
 | ne {τ:type} : τ.small → ok (comp comp.ne) τ type.bool
 
+inductive ok_asnop : binop → type → Prop
+| mk {op} : ok op type.int type.int → ok_asnop op type.int
+
 end binop
 
 namespace unop
@@ -40,6 +43,10 @@ inductive ok : unop → type → type → Prop
 | bnot : ok bnot type.int type.int
 
 end unop
+
+@[reducible] def ctx := list (ident × c0.type)
+
+def ctx.ok (Δ : ctx) : Prop := (list.map prod.fst Δ).nodup
 
 namespace ast
 
@@ -62,7 +69,7 @@ inductive get_fdef : ast → ident → fdef → Prop
   option.forall₂ (eval_ty Γ) τ τ' →
   get_fdef Γ f ⟨τs', τ'⟩
 
-inductive get_body : ast → ident → list (ident × c0.type) → stmt → Prop
+inductive get_body : ast → ident → ctx → stmt → Prop
 | mk {h f xτs xτs' τ body Γ} :
   gdecl.fdecl h f xτs τ (some body) ∈ Γ →
   list.forall₂ (prod.forall₂ eq (eval_ty Γ)) xτs xτs' →
@@ -111,7 +118,7 @@ def typeable : exp → Prop
 | null := false
 | _ := true
 
-inductive ok (Γ : ast) (Δ : list (ident × c0.type)) : exp → type → Prop
+inductive ok (Γ : ast) (Δ : ctx) : exp → type → Prop
 | int {n} : ok (int n) (reg c0.type.int)
 | bool {b} : ok (bool b) (reg c0.type.bool)
 | null {τ} : ok null (reg (ref τ))
@@ -182,7 +189,7 @@ end exp
 namespace stmt
 open c0.type exp.type
 
-inductive ok (Γ : ast) (ret_τ : option c0.type) : list (ident × c0.type) → stmt → Prop
+inductive ok (Γ : ast) (ret_τ : option c0.type) : ctx → stmt → Prop
 | decl {Δ v τ τ' s} :
   (∀ τ, (v, τ) ∉ Δ) → eval_ty Γ τ τ' → τ'.small →
   ok ((v, τ') :: Δ) s → ok Δ (decl v τ s)
@@ -197,9 +204,9 @@ inductive ok (Γ : ast) (ret_τ : option c0.type) : list (ident × c0.type) → 
 | asgn {Δ lv e τ} :
   exp.ok Γ Δ (lval.to_exp lv) τ → exp.ok Γ Δ e τ →
   τ.small → ok Δ (asgn lv e)
-| asnop {Δ lv op e} :
-  exp.ok Γ Δ (lval.to_exp lv) (reg int) → exp.ok Γ Δ e (reg int) →
-  binop.ok op int int →
+| asnop {Δ lv op τ e} :
+  exp.ok Γ Δ (lval.to_exp lv) (reg τ) → exp.ok Γ Δ e (reg τ) →
+  binop.ok_asnop op τ →
   ok Δ (asnop lv op e)
 | eval {Δ e τ} : exp.ok Γ Δ e τ → τ.small → ok Δ (eval e)
 | assert {Δ e} : exp.ok Γ Δ e (reg bool) → ok Δ (assert e)
@@ -254,7 +261,7 @@ inductive init : finset ident → finset ident → stmt → finset ident → Pro
 | seq {s₁ s₂ γ δ₁ δ₂ δ₃} :
   init γ δ₁ s₁ δ₂ → init γ δ₂ s₂ δ₃ → init γ δ₁ (seq s₁ s₂) δ₃
 
-def ok_init (Δ : list (ident × c0.type)) (s : stmt) : Prop :=
+def ok_init (Δ : ctx) (s : stmt) : Prop :=
 let γ := (Δ.map prod.fst).to_finset in ∃ δ', init γ γ s δ'
 
 end stmt

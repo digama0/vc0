@@ -12,18 +12,6 @@ inductive value
 | ref : option ℕ → value
 | arr : ℕ → value → value
 
-inductive vtype
-| int
-| bool
-| ref : vtype → vtype
-| nil
-| cons : vtype → vtype → vtype
-| arr : vtype → vtype
-
-def vtype.arr' (τ : vtype) : ℕ → vtype
-| 0 := vtype.nil
-| (n+1) := vtype.cons τ (vtype.arr' n)
-
 inductive addr
 | ref : nat → addr
 | var : ident → addr
@@ -42,38 +30,7 @@ a.nth' $ sd.find_index $ λ xt, xt.1 = i
 
 end addr
 
-namespace vtype
-open sum
-
-inductive of_ty (Γ : ast) : type ⊕ sdef → vtype → Prop
-| int : of_ty (inl type.int) int
-| bool : of_ty (inl type.bool) bool
-| ref {τ vτ} : of_ty (inl τ) vτ → of_ty (inl $ type.ref τ) (vtype.ref vτ)
-| arr {τ vτ} : of_ty (inl τ) vτ → of_ty (inl $ type.arr τ) (vtype.arr vτ)
-| struct {s sd vτ} : Γ.get_sdef s sd →
-  of_ty (inr sd) vτ → of_ty (inl $ type.struct s) vτ
-| nil : of_ty (inr []) nil
-| cons {x τ vτ τs vτs} :
-  of_ty (inl τ) vτ → of_ty (inr τs) vτs →
-  of_ty (inr ((x, τ) :: τs)) (cons vτ vτs)
-
-end vtype
-
 namespace value
-
-inductive ok (H : list vtype) : value → vtype → Prop
-| int {n} : ok (int n) vtype.int
-| bool {b} : ok (bool b) vtype.bool
-| null {τ} : ok (ref none) (vtype.ref τ)
-| ref {n τ} : τ ∈ list.nth H n → ok (ref (some n)) (vtype.ref τ)
-| nil : ok nil vtype.nil
-| cons {v₁ v₂ τ₁ τ₂} : ok v₁ τ₁ → ok v₂ τ₂ →
-  ok (cons v₁ v₂) (vtype.cons τ₁ τ₂)
-| arr {v τ n} : ok v (vtype.arr' τ n) → ok (arr n v) (vtype.arr τ)
-
-def ok_opt (H : list vtype) (v : value) : option vtype → Prop
-| none := nil = v
-| (some τ) := ok H v τ
 
 inductive at_head (R : value → value → Prop) : value → value → Prop
 | mk {v v' vs} : R v v' → at_head (cons v vs) (cons v' vs)
@@ -141,16 +98,9 @@ end value
 
 @[reducible] def heap := list value
 
-def heap.ok (h : heap) (H : list vtype) : Prop :=
-list.forall₂ (value.ok H) h H
-
 @[reducible] def vars := list (ident × value)
 
 namespace vars
-
-structure ok (H : list vtype) (vs : vars) (vτs : list vtype) : Prop :=
-(ok : list.forall₂ (λ (xτ : ident × value) vτ, value.ok H xτ.2 vτ) vs vτs)
-(nd : (list.map prod.fst vs).nodup)
 
 inductive update (R : value → value → Prop) (i : ident) : vars → vars → Prop
 | one {v v' vs} : R v v' → update ((i, v) :: vs) ((i, v') :: vs)
@@ -200,7 +150,7 @@ inductive cont : cont_ty → Type
 | asnop : binop → exp → list stmt → cont A     -- asnop _ op e : K
 | eval : list stmt → cont V                    -- eval _ : K
 | assert : list stmt → cont V                  -- assert _ : K
-| ret : list stmt → cont V                     -- ret _ : K
+| ret : cont V                                 -- ret _
 | addr_deref : cont A → cont V                 -- &(*_) : K
 | addr_field : ident → ident → cont A → cont A -- &(_.(s)f) : K
 | addr_index₁ : exp → cont A → cont A          -- &(_[e₂]) : K
@@ -215,40 +165,39 @@ inductive cont : cont_ty → Type
 | deref : cont V → cont A                      -- * _ : K
 | alloc_arr : type → cont V → cont V           -- alloc_arr(τ, _) : K
 
-structure state_ctx :=
+structure env :=
 (heap : heap)
-(stack : list (list (ident × type) × vars × cont V))
+(stack : list (ctx × vars × cont V))
 (vars : vars)
-(ctx : list (ident × type))
+(ctx : ctx)
 
 inductive state
-| stmt : state_ctx → stmt → list stmt → state
-| exp : ∀ α, state_ctx → exp → cont α → state
-| ret : ∀ α, state_ctx → cont_ty.ty α → cont α → state
+| stmt : env → stmt → list stmt → state
+| exp : ∀ α, env → exp → cont α → state
+| ret : ∀ α, env → cont_ty.ty α → cont α → state
 | err : err → state
 | done : int32 → state
 
 open ast.stmt ast.exp.type c0.type
 
-inductive step_ret : state_ctx → value → state → Prop
+inductive step_ret : env → value → state → Prop
 | ret {H S η Δ K η' Δ' v} :
   step_ret ⟨H, (Δ, η, K) :: S, η', Δ'⟩ v (state.ret V ⟨H, S, η, Δ⟩ v K)
 | done {H η Δ n} : step_ret ⟨H, [], η, Δ⟩ (value.int n) (state.done n)
 
-inductive step_call (η₀ : vars) (Δ₀ : list (ident × type)) :
-  list (ident × type) → value → vars → list (ident × type) → Prop
+inductive step_call (η₀ : vars) (Δ₀ : ctx) : ctx → value → vars → ctx → Prop
 | nil : step_call [] value.nil η₀ Δ₀
 | cons {x τ xτs v vs η Δ} :
   step_call xτs vs ((x, v) :: η) ((x, τ) :: Δ) →
   step_call ((x, τ) :: xτs) (value.cons v vs) η Δ
 
-inductive step_deref : state_ctx → option addr → cont V → state → Prop
+inductive step_deref : env → option addr → cont V → state → Prop
 | null {C K} : step_deref C none K (state.err err.mem)
-| ok {C:state_ctx} {a v K} :
+| ok {C:env} {a v K} :
   addr.get C.heap C.vars a v →
   step_deref C (some a) K (state.ret V C v K)
 
-inductive step_alloc : state_ctx → value → cont V → state → Prop
+inductive step_alloc : env → value → cont V → state → Prop
 | mk {H S η Δ v K} :
   step_alloc ⟨H, S, η, Δ⟩ v K
     (state.ret V ⟨H ++ [v], S, η, Δ⟩ (value.ref H.length) K)
@@ -313,9 +262,9 @@ inductive step (Γ : ast) : state →
 
 | ret₁ {C e K} :
   step (state.stmt C (ret (some e)) K) none
-       (state.exp V C e $ cont.ret K)
-| ret₂ {C T v K} :
-  step_ret C v T → step (state.ret V C v $ cont.ret K) none T
+       (state.exp V C e cont.ret)
+| ret₂ {C T v} :
+  step_ret C v T → step (state.ret V C v cont.ret) none T
 | ret_none {C T K} :
   step_ret C value.nil T → step (state.stmt C (ret none) K) none T
 
@@ -337,7 +286,7 @@ inductive step (Γ : ast) : state →
   step (state.exp V C exp.null K) none
        (state.ret V C (value.ref none) K)
 
-| var {C:state_ctx} {i v K} : (i, v) ∈ C.vars →
+| var {C:env} {i v K} : (i, v) ∈ C.vars →
   step (state.exp V C (exp.var i) K) none
        (state.ret V C v K)
 
@@ -407,7 +356,7 @@ inductive step (Γ : ast) : state →
   step (state.exp V C (exp.index e n) K) none
        (state.exp A C e $ cont.addr_index₁ n $ cont.deref K)
 
-| field {C:state_ctx} {e s f K} :
+| field {C:env} {e s f K} :
   exp.ok Γ C.ctx e (reg $ struct s) →
   step (state.exp V C (exp.field e f) K) none
        (state.exp A C e $ cont.addr_field s f $ cont.deref K)
@@ -448,19 +397,19 @@ inductive step (Γ : ast) : state →
 | addr_index₂ {C a n K} :
   step (state.ret A C a $ cont.addr_index₁ n K) none
        (state.exp V C n $ cont.addr_index₂ a K)
-| addr_index₃ {C:state_ctx} {a n K} {i:int32} {j:ℕ} :
+| addr_index₃ {C:env} {a n K} {i:int32} {j:ℕ} :
   addr.get_len C.heap C.vars a n → (i:ℤ) = j → j < n →
   step (state.ret V C (value.int i) $ cont.addr_index₂ (some a) K) none
        (state.ret A C (some (a.nth j)) K)
 | addr_index_err₁ {C i K} :
   step (state.ret V C (value.int i) $ cont.addr_index₂ none K) none
        (state.err err.mem)
-| addr_index_err₂ {C:state_ctx} {a n i K} :
+| addr_index_err₂ {C:env} {a n i K} :
   addr.get_len C.heap C.vars a n → (i < 0 ∨ (n:ℤ) ≤ (i:ℤ)) →
   step (state.ret V C (value.int i) $ cont.addr_index₂ (some a) K) none
        (state.err err.mem)
 
-| addr_field₁ {C:state_ctx} {e s f K} :
+| addr_field₁ {C:env} {e s f K} :
   exp.ok Γ C.ctx e (reg $ struct s) →
   step (state.exp A C (exp.field e f) K) none
        (state.exp A C e $ cont.addr_field s f K)
