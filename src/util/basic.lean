@@ -26,8 +26,13 @@ end roption
 namespace option
 
 inductive forall₂ {α α'} (R : α → α' → Prop) : option α → option α' → Prop
-| none : forall₂ none none
+| none {} : forall₂ none none
 | some {a a'} : R a a' → forall₂ (some a) (some a')
+
+theorem forall₂.imp {α α'} {R S : α → α' → Prop} (H : ∀ a a', R a a' → S a a') :
+  ∀ {o o'}, forall₂ R o o' → forall₂ S o o'
+| _ _ forall₂.none := forall₂.none
+| _ _ (forall₂.some h) := forall₂.some (H _ _ h)
 
 end option
 
@@ -38,11 +43,17 @@ inductive forall₂ {α β α' β'} (R : α → α' → Prop) (S : β → β' �
 | inr {b b'} : S b b' → forall₂ (sum.inr b) (sum.inr b')
 
 end sum
+
 namespace prod
 
 inductive forall₂ {α β α' β'} (R : α → α' → Prop) (S : β → β' → Prop) :
   α × β → α' × β' → Prop
 | mk {a b a' b'} : R a a' → S b b' → forall₂ (a, b) (a', b')
+
+theorem forall₂.imp {α β α' β'} {R R' : α → α' → Prop} {S S' : β → β' → Prop}
+  (H₁ : ∀ a a', R a a' → R' a a') (H₂ : ∀ b b', S b b' → S' b b') :
+  ∀ {x x'}, forall₂ R S x x' → forall₂ R' S' x x'
+| _ _ ⟨h₁, h₂⟩ := ⟨H₁ _ _ h₁, H₂ _ _ h₂⟩
 
 end prod
 

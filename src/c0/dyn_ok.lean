@@ -45,9 +45,19 @@ inductive field (Γ : ast) (s : ident) (f : ident) : vtype → vtype → Prop
 
 end vtype
 
+def heap_ty := list vtype
+def vars_ty := list vtype
+
+instance : partial_order heap_ty :=
+{ le := (<:+),
+  le_refl := list.suffix_refl,
+  le_trans := @list.is_suffix.trans _,
+  le_antisymm := λ l₁ l₂ h₁ h₂, list.sublist_antisymm
+    (list.sublist_of_suffix h₁) (list.sublist_of_suffix h₂) }
+
 namespace value
 
-inductive ok (E : list vtype) : value → vtype → Prop
+inductive ok (E : heap_ty) : value → vtype → Prop
 | int {n} : ok (int n) vtype.int
 | bool {b} : ok (bool b) vtype.bool
 | null {τ} : ok (ref none) (vtype.ref τ)
@@ -57,16 +67,16 @@ inductive ok (E : list vtype) : value → vtype → Prop
   ok (cons v₁ v₂) (vtype.cons τ₁ τ₂)
 | arr {v τ n} : ok v (vtype.arr' τ n) → ok (arr n v) (vtype.arr τ)
 
-def ok_opt (E : list vtype) (v : value) : option vtype → Prop
+def ok_opt (E : heap_ty) (v : value) : option vtype → Prop
 | none := nil = v
 | (some τ) := ok E v τ
 
 end value
 
-def heap.ok (h : heap) (E : list vtype) : Prop :=
+def heap.ok (h : heap) (E : heap_ty) : Prop :=
 list.forall₂ (value.ok E) h E
 
-structure vars.ok (H : list vtype) (vs : vars) (vτs : list vtype) : Prop :=
+structure vars.ok (H : list vtype) (vs : vars) (vτs : vars_ty) : Prop :=
 (ok : list.forall₂ (λ (xτ : ident × value) vτ, value.ok H xτ.2 vτ) vs vτs)
 (nd : (list.map prod.fst vs).nodup)
 
@@ -81,21 +91,21 @@ def stmt.ok_vtype (Γ : ast) (Δ : ctx) (ret : vtype) (s : stmt) : Prop :=
 def stmt_list.ok (Γ : ast) (Δ : ctx) (ret : vtype) (ss : list stmt) : Prop :=
 ∀ s ∈ ss, stmt.ok_vtype Γ Δ ret s
 
-def addr.ok (Γ : ast) (E : list vtype) (H : heap) (η : vars)
+def addr.ok (Γ : ast) (E : heap_ty) (H : heap) (η : vars)
   (a : addr) (τ : vtype) : Prop :=
 ∃ v, addr.get H η a v ∧ value.ok E v τ
 
-def addr_opt.ok (Γ : ast) (E : list vtype) (H : heap) (η : vars) :
+def addr_opt.ok (Γ : ast) (E : heap_ty) (H : heap) (η : vars) :
   option addr → vtype → Prop
 | none     τ := true
 | (some a) τ := addr.ok Γ E H η a τ
 
-def cont_ty.ok (Γ : ast) (E : list vtype) (H : heap) (η : vars) :
+def cont_ty.ok (Γ : ast) (E : heap_ty) (H : heap) (η : vars) :
   ∀ α, cont_ty.ty α → vtype → Prop
 | V := value.ok E
 | A := addr_opt.ok Γ E H η
 
-inductive cont.ok (Γ : ast) (E : list vtype) (H : heap) (η : vars)
+inductive cont.ok (Γ : ast) (E : heap_ty) (H : heap) (η : vars)
   (Δ : ctx) (ret : vtype) : ∀ {α}, cont α → vtype → Prop
 | If {s₁ s₂ K} :
   stmt.ok_vtype Γ Δ ret s₁ →
@@ -199,12 +209,12 @@ inductive cont.ok (Γ : ast) (E : list vtype) (H : heap) (η : vars)
   cont.ok (cont.alloc_arr τ K) vtype.int
 
 structure env_ty :=
-(heap : list vtype)
-(stack : list (list vtype))
-(vars : list vtype)
+(heap : heap_ty)
+(stack : list vars_ty)
+(vars : vars_ty)
 
-inductive stack.ok (Γ : ast) (E : list vtype) (H : heap) :
-  list (list vtype) → list (ctx × vars × cont V) → vtype → Prop
+inductive stack.ok (Γ : ast) (E : heap_ty) (H : heap) :
+  list vars_ty → list (ctx × vars × cont V) → vtype → Prop
 | nil : stack.ok [] [] vtype.int
 | cons {Δ η K S σ σs τ τ'} :
   ctx.ok Δ →
@@ -239,5 +249,19 @@ inductive state.ok (Γ : ast) : state → Prop
   state.ok (state.ret α ⟨H, S, η, Δ⟩ v K)
 | err (err) : state.ok (state.err err)
 | done (n) : state.ok (state.done n)
+
+def io.ok (Γ : ast) : io → Prop
+| none := true
+| (some ((f, H, vs), (H', v))) :=
+  ∀ ⦃E τs τ vτ vτs⦄,
+    Γ.is_extern f →
+    Γ.get_fdef f ⟨τs, τ⟩ →
+    vtype.of_ty Γ (rego τ) vτ →
+    vtype.of_ty Γ (ls τs) vτs →
+    heap.ok H E →
+    value.ok E vs vτs →
+  ∃ E' ≥ E,
+    heap.ok H' E' ∧
+    value.ok E' v vτ
 
 end c0

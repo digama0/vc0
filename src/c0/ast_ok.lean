@@ -69,21 +69,19 @@ inductive get_fdef : ast → ident → fdef → Prop
   option.forall₂ (eval_ty Γ) τ τ' →
   get_fdef Γ f ⟨τs', τ'⟩
 
-inductive get_body : ast → ident → ctx → stmt → Prop
-| mk {h f xτs xτs' τ body Γ} :
+inductive get_body : ast → ident → option c0.type → ctx → stmt → Prop
+| mk {h f xτs xτs' τ τ' body Γ} :
   gdecl.fdecl h f xτs τ (some body) ∈ Γ →
   list.forall₂ (prod.forall₂ eq (eval_ty Γ)) xτs xτs' →
-  get_body Γ f xτs' body
+  option.forall₂ (eval_ty Γ) τ τ' →
+  get_body Γ f τ' xτs' body
 
-def is_fdef (Γ : ast) (f : ident) : Prop := ∃ xτs s, get_body Γ f xτs s
+def is_fdef (Γ : ast) (f : ident) : Prop := ∃ τ xτs s, get_body Γ f τ xτs s
 
 inductive is_extern : ast → ident → Prop
 | mk {f xτs τ body Γ} :
   gdecl.fdecl tt f xτs τ body ∈ Γ →
   is_extern Γ f
-
-inductive get_typedef : ast → ident → type → Prop
-| mk {v τ Γ} : gdecl.typedef v τ ∈ Γ → get_typedef Γ v τ
 
 inductive get_sdef : ast → ident → sdef → Prop
 | mk {s xτs xτs' Γ} :
@@ -119,9 +117,9 @@ def typeable : exp → Prop
 | _ := true
 
 inductive ok (Γ : ast) (Δ : ctx) : exp → type → Prop
-| int {n} : ok (int n) (reg c0.type.int)
-| bool {b} : ok (bool b) (reg c0.type.bool)
-| null {τ} : ok null (reg (ref τ))
+| int {} {n} : ok (int n) (reg c0.type.int)
+| bool {} {b} : ok (bool b) (reg c0.type.bool)
+| null {} {τ} : ok null (reg (ref τ))
 | var {v τ} : (v, τ) ∈ Δ → ok (var v) (reg τ)
 | binop {op e₁ e₂ τ₁ τ₂} :
   ok e₁ (reg τ₁) → ok e₂ (reg τ₁) →
@@ -131,7 +129,7 @@ inductive ok (Γ : ast) (Δ : ctx) : exp → type → Prop
 | cond {c e₁ e₂ τ} : ok c (reg c0.type.bool) →
   ok e₁ (reg τ) → ok e₂ (reg τ) →
   τ.small → ok (cond c e₁ e₂) (reg τ)
-| nil : ok nil (ls [])
+| nil {} : ok nil (ls [])
 | cons {e es τ τs} :
   ok e (reg τ) → ok es (ls τs) →
   ok (cons e es) (ls (τ :: τs))
@@ -213,7 +211,7 @@ inductive ok (Γ : ast) (ret_τ : option c0.type) : ctx → stmt → Prop
 | ret {Δ e} :
   option.forall₂ (λ e τ, exp.ok Γ Δ e (reg τ)) e ret_τ →
   ok Δ (ret e)
-| nop {Δ} : ok Δ nop
+| nop {} {Δ} : ok Δ nop
 | seq {Δ s₁ s₂} : ok Δ s₁ → ok Δ s₂ → ok Δ (seq s₁ s₂)
 
 def use_func : stmt → finset ident
@@ -269,7 +267,7 @@ namespace gdecl
 
 inductive ok (Γ : ast) : gdecl → Prop
 | fdecl (header f xτs xτs' ret ret' body) :
-  eval_ty Γ ret ret' →
+  option.forall₂ (eval_ty Γ) ret ret' →
   (list.map prod.fst xτs).nodup →
   list.forall₂ (prod.forall₂ eq (λ τ τ', eval_ty Γ τ τ' ∧ τ'.small)) xτs xτs' →
   (∀ s ∈ body,
@@ -279,7 +277,7 @@ inductive ok (Γ : ast) : gdecl → Prop
     s.ok_init xτs') →
   ok (fdecl header f xτs ret body)
 | typedef (x τ τ') :
-  (∀ τ, ¬ get_typedef Γ x τ) →
+  (∀ τ, typedef x τ ∉ Γ) →
   eval_ty Γ τ τ' → ok (typedef x τ)
 | sdecl (s) : ok (sdecl s none)
 | sdefn (s xτs) :
@@ -295,13 +293,20 @@ inductive ok' : ast → ast → Prop
 | cons {Γ d ds} : gdecl.ok Γ d → ok' (d :: Γ) ds → ok' Γ (d :: ds)
 
 structure ok (Γ : ast) : Prop :=
-(gdecls : ok' [] Γ)
+(gdecls : ok' [] Γ.reverse)
 (fdef_uniq : ∀ i fd fd', Γ.get_fdef i fd → Γ.get_fdef i fd' → fd = fd')
 (header_no_def : ∀ i, Γ.is_extern i → ¬ Γ.is_fdef i)
-(fdef_tdef : ∀ i fd, Γ.get_fdef i fd → ∀ τ, ¬ Γ.get_typedef i τ)
-(use_def : ∀ f xτs s, Γ.get_body f xτs s → ∀ g ∈ s.use_func,
+(fdef_tdef : ∀ i fd, Γ.get_fdef i fd → ∀ τ, gdecl.typedef i τ ∉ Γ)
+(use_def : ∀ f τ xτs s, Γ.get_body f τ xτs s → ∀ g ∈ s.use_func,
   Γ.is_extern g ∨ Γ.is_fdef g)
 (main : Γ.get_fdef main ⟨[], c0.type.int⟩ ∧ Γ.is_fdef main)
+
+-- The ASTs described here are laid out in reverse order, i.e.
+-- `Γ = [z, y, x]` if the declarations are x,y,z in source order.
+-- This makes them easier to work with as contexts.
+-- The `ds` represents a list in source order, so that `decls_ok`
+-- says that an input AST is typecorrect.
+def decls_ok (ds : ast) : Prop := ok ds.reverse
 
 end ast
 

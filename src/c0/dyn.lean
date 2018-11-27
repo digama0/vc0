@@ -180,6 +180,14 @@ inductive state
 
 open ast.stmt ast.exp.type c0.type
 
+inductive start (Γ : ast) : state → Prop
+| mk {s} : Γ.get_body main (some int) [] s →
+  start (state.stmt ⟨[], [], [], []⟩ s [])
+
+inductive state.final : state → Prop
+| err {e} : state.final (state.err e)
+| done {n} : state.final (state.done n)
+
 inductive step_ret : env → value → state → Prop
 | ret {H S η Δ K η' Δ' v} :
   step_ret ⟨H, (Δ, η, K) :: S, η', Δ'⟩ v (state.ret V ⟨H, S, η, Δ⟩ v K)
@@ -202,8 +210,9 @@ inductive step_alloc : env → value → cont V → state → Prop
   step_alloc ⟨H, S, η, Δ⟩ v K
     (state.ret V ⟨H ++ [v], S, η, Δ⟩ (value.ref H.length) K)
 
-inductive step (Γ : ast) : state →
-  option ((ident × heap × value) × (heap × value)) → state → Prop
+def io := option ((ident × heap × value) × (heap × value))
+
+inductive step (Γ : ast) : state → io → state → Prop
 | decl {H S η Δ v τ τ' s K} :
   ast.eval_ty Γ τ τ' →
   step (state.stmt ⟨H, S, η, Δ⟩ (decl v τ s) K) none
@@ -337,8 +346,8 @@ inductive step (Γ : ast) : state →
 | call₁ {C f es K} :
   step (state.exp V C (exp.call f es) K) none
        (state.exp V C es $ cont.call f K)
-| call₂ {H S η Δ η' Δ' f xτs s vs K} :
-  Γ.get_body f xτs s →
+| call₂ {H S η Δ η' Δ' f τ xτs s vs K} :
+  Γ.get_body f τ xτs s →
   step_call η' Δ' xτs vs [] [] →
   step (state.ret V ⟨H, S, η, Δ⟩ vs $ cont.call f K) none
        (state.stmt ⟨H, (Δ, η, K) :: S, η', Δ'⟩ s [])
