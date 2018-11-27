@@ -9,7 +9,7 @@ inductive vtype
 | nil
 | cons : vtype → vtype → vtype
 | arr : vtype → vtype
-| struct : ident → vtype → vtype
+| named : ident → vtype → vtype
 
 def vtype.arr' (τ : vtype) : ℕ → vtype
 | 0 := vtype.nil
@@ -17,23 +17,28 @@ def vtype.arr' (τ : vtype) : ℕ → vtype
 
 namespace vtype
 
-open ast.exp.type
-inductive of_ty (Γ : ast) : ast.exp.type → vtype → Prop
-| void : of_ty void nil
-| int : of_ty (reg type.int) int
-| bool : of_ty (reg type.bool) bool
-| ref {τ vτ} : of_ty (reg τ) vτ →
-  of_ty (reg $ type.ref τ) (vtype.ref vτ)
-| arr {τ vτ} : of_ty (reg τ) vτ →
-  of_ty (reg $ type.arr τ) (vtype.ref $ vtype.arr vτ)
-| struct {s sd vτ} :
-  Γ.get_sdef s sd →
-  of_ty (ls (prod.snd <$> sd)) vτ →
-  of_ty (reg $ type.struct s) (struct s vτ)
-| nil : of_ty (ls []) nil
+open ast.exp.type sum
+inductive of_ty' (Γ : ast) : ast.exp.type ⊕ sdef → vtype → Prop
+| void : of_ty' (inl void) nil
+| int : of_ty' (inl $ reg type.int) int
+| bool : of_ty' (inl $ reg type.bool) bool
+| ref {τ vτ} : of_ty' (inl $ reg τ) vτ →
+  of_ty' (inl $ reg $ type.ref τ) (vtype.ref vτ)
+| arr {τ vτ} : of_ty' (inl $ reg τ) vτ →
+  of_ty' (inl $ reg $ type.arr τ) (vtype.ref $ vtype.arr vτ)
+| struct {s sd vτ} : Γ.get_sdef s sd →
+  of_ty' (inr sd) vτ → of_ty' (inl $ reg $ type.struct s) vτ
+| nil : of_ty' (inl $ ls []) nil
 | cons {τ τs vτ vτs} :
-  of_ty (reg τ) vτ → of_ty (ls τs) vτs →
-  of_ty (ls (τ :: τs)) (cons vτ vτs)
+  of_ty' (inl $ reg τ) vτ → of_ty' (inl $ ls τs) vτs →
+  of_ty' (inl $ ls (τ :: τs)) (cons vτ vτs)
+| sdef_nil : of_ty' (inr []) nil
+| sdef_cons {x τ xτs vτ vτs} :
+  of_ty' (inl $ reg τ) (named x vτ) → of_ty' (inr xτs) vτs →
+  of_ty' (inr ((x, τ) :: xτs)) (cons vτ vτs)
+
+def of_ty (Γ : ast) (τ : ast.exp.type) : vtype → Prop :=
+of_ty' Γ (inl τ)
 
 inductive lookup (i : ident) (τ : vtype) : list ident → vtype → Prop
 | one {xs τs} : lookup (i :: xs) (vtype.cons τ τs)
@@ -67,7 +72,7 @@ inductive ok (E : heap_ty) : value → vtype → Prop
 | cons {v₁ v₂ τ₁ τ₂} : ok v₁ τ₁ → ok v₂ τ₂ →
   ok (cons v₁ v₂) (vtype.cons τ₁ τ₂)
 | arr {v τ n} : ok v (vtype.arr' τ n) → ok (arr n v) (vtype.arr τ)
-| struct {v τ} (s) : ok v τ → ok (struct s v) (vtype.struct s τ)
+| named {v x τ} : ok v τ → ok (named x v) (vtype.named x τ)
 
 def ok_opt (E : heap_ty) (v : value) : option vtype → Prop
 | none := nil = v
@@ -93,19 +98,19 @@ def stmt.ok_vtype (Γ : ast) (Δ : ctx) (ret : vtype) (s : stmt) : Prop :=
 def stmt_list.ok (Γ : ast) (Δ : ctx) (ret : vtype) (ss : list stmt) : Prop :=
 ∀ s ∈ ss, stmt.ok_vtype Γ Δ ret s
 
-def addr.ok (Γ : ast) (E : heap_ty) (H : heap) (η : vars)
+def addr.ok (E : heap_ty) (H : heap) (η : vars)
   (a : addr) (τ : vtype) : Prop :=
-∃ v, addr.get Γ H η a v ∧ value.ok E v τ
+∃ v, addr.get H η a v ∧ value.ok E v τ
 
-def addr_opt.ok (Γ : ast) (E : heap_ty) (H : heap) (η : vars) :
+def addr_opt.ok (E : heap_ty) (H : heap) (η : vars) :
   option addr → vtype → Prop
 | none     τ := true
-| (some a) τ := addr.ok Γ E H η a τ
+| (some a) τ := addr.ok E H η a τ
 
-def cont_ty.ok (Γ : ast) (E : heap_ty) (H : heap) (η : vars) :
+def cont_ty.ok (E : heap_ty) (H : heap) (η : vars) :
   ∀ α, cont_ty.ty α → vtype → Prop
 | V := value.ok E
-| A := addr_opt.ok Γ E H η
+| A := addr_opt.ok E H η
 
 inductive cont.ok (Γ : ast) (E : heap_ty) (H : heap) (η : vars)
   (Δ : ctx) (ret : vtype) : ∀ {α}, cont α → vtype → Prop
@@ -120,7 +125,7 @@ inductive cont.ok (Γ : ast) (E : heap_ty) (H : heap) (η : vars)
   stmt_list.ok Γ Δ ret K →
   cont.ok (cont.asgn₁ e K) τ
 | asgn₂ {a τ K} :
-  addr_opt.ok Γ E H η a τ →
+  addr_opt.ok E H η a τ →
   stmt_list.ok Γ Δ ret K →
   cont.ok (cont.asgn₂ a K) τ
 
@@ -155,7 +160,7 @@ inductive cont.ok (Γ : ast) (E : heap_ty) (H : heap) (η : vars)
   cont.ok K τ →
   cont.ok (cont.addr_index₁ e₂ K) (vtype.arr τ)
 | addr_index₂ {a τ K} :
-  addr_opt.ok Γ E H η a (vtype.arr τ) →
+  addr_opt.ok E H η a (vtype.arr τ) →
   cont.ok K τ →
   cont.ok (cont.addr_index₂ a K) vtype.int
 
@@ -247,7 +252,7 @@ inductive state.ok (Γ : ast) : state → Prop
   state.ok (state.exp α ⟨H, S, η⟩ e K)
 | ret {E σs σ H η S Δ ret τ α v K} :
   env.ok Γ ⟨E, σs, σ, Δ⟩ ⟨H, S, η⟩ ret →
-  cont_ty.ok Γ E H η α v τ →
+  cont_ty.ok E H η α v τ →
   cont.ok Γ E H η Δ ret K τ →
   state.ok (state.ret α ⟨H, S, η⟩ v K)
 | err (err) : state.ok (state.err err)

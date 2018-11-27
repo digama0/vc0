@@ -11,7 +11,7 @@ inductive value
 | cons : value → value → value
 | ref : option ℕ → value
 | arr : ℕ → value → value
-| struct : ident → value → value
+| named : ident → value → value
 
 inductive addr
 | ref : nat → addr
@@ -26,9 +26,6 @@ namespace addr
 def nth' (a : addr) : ℕ → addr
 | 0 := a.head
 | (n+1) := (nth' n).tail
-
-def field' (sd : sdef) (a : addr) (i : ident) : addr :=
-a.nth' $ sd.find_index $ λ xt, xt.1 = i
 
 end addr
 
@@ -85,11 +82,11 @@ inductive default (Γ : ast) : type ⊕ sdef → value → Prop
 | ref {τ} : default (inl $ type.ref τ) (ref none)
 | arr {τ} : default (inl $ type.arr τ) (ref none)
 | struct {s sd v} : Γ.get_sdef s sd → default (inr sd) v →
-  default (inl $ type.struct s) (value.struct s v)
+  default (inl $ type.struct s) v
 | nil : default (inr []) nil
 | cons {x τ xτs v vs} :
   default (inl τ) v → default (inr xτs) vs →
-  default (inr ((x, τ) :: xτs)) (cons v vs)
+  default (inr ((x, τ) :: xτs)) (cons (named x v) vs)
 
 def repeat (v : value) : ℕ → value
 | 0 := nil
@@ -111,22 +108,18 @@ end vars
 
 namespace addr
 
-inductive get (Γ : ast) (h : heap) (η : vars) : addr → value → Prop
+inductive get (h : heap) (η : vars) : addr → value → Prop
 | ref {n v} : v ∈ h.nth n → get (ref n) v
 | ident {i v} : (i, v) ∈ η → get (var i) v
 | head {a v vs} : get a (value.cons v vs) → get (head a) v
 | tail {a v vs} : get a (value.cons v vs) → get (tail a) vs
 | nth {a i n v} : get a (value.arr n v) → i < n →
   get (nth' a i) v → get (nth a i) v
-| field {a s sd f v} :
-  get a (value.struct s v) → Γ.get_sdef s sd →
-  get (field' sd a f) v → get (field a f) v
+| field {a i f v} :
+  get (nth' a i) (value.named f v) → get (field a f) v
 
-inductive get_len (Γ : ast) (h : heap) (η : vars) : addr → ℕ → Prop
-| mk {a n v} : get Γ h η a (value.arr n v) → get_len a n
-
-inductive get_struct (Γ : ast) (h : heap) (η : vars) : addr → ident → Prop
-| mk {a s v} : get Γ h η a (value.struct s v) → get_struct a s
+inductive get_len (h : heap) (η : vars) : addr → ℕ → Prop
+| mk {a n v} : get h η a (value.arr n v) → get_len a n
 
 inductive update : (value → value → Prop) →
   addr → heap → vars → heap → vars → Prop
@@ -205,10 +198,10 @@ inductive step_call (η₀ : vars) : value → vars → Prop
   step_call vs ((x, v) :: η) →
   step_call (value.cons v vs) η
 
-inductive step_deref (Γ : ast) : env → option addr → cont V → state → Prop
+inductive step_deref : env → option addr → cont V → state → Prop
 | null {C K} : step_deref C none K (state.err err.mem)
 | ok {C:env} {a v K} :
-  addr.get Γ C.heap C.vars a v →
+  addr.get C.heap C.vars a v →
   step_deref C (some a) K (state.ret V C v K)
 
 inductive step_alloc : env → value → cont V → state → Prop
@@ -258,7 +251,7 @@ inductive step (Γ : ast) : state → io → state → Prop
   step (state.stmt C (asnop lv op e) K) none
        (state.exp A C lv.to_exp $ cont.asnop op e K)
 | asnop₂ {C a op e K T} :
-  step_deref Γ C a (cont.binop₁ op e $ cont.asgn₂ a K) T →
+  step_deref C a (cont.binop₁ op e $ cont.asgn₂ a K) T →
   step (state.ret A C a $ cont.asnop op e K) none T
 
 | eval₁ {C e K} :
@@ -412,14 +405,14 @@ inductive step (Γ : ast) : state → io → state → Prop
   step (state.ret A C a $ cont.addr_index₁ n K) none
        (state.exp V C n $ cont.addr_index₂ a K)
 | addr_index₃ {C:env} {a n K} {i:int32} {j:ℕ} :
-  addr.get_len Γ C.heap C.vars a n → (i:ℤ) = j → j < n →
+  addr.get_len C.heap C.vars a n → (i:ℤ) = j → j < n →
   step (state.ret V C (value.int i) $ cont.addr_index₂ (some a) K) none
        (state.ret A C (some (a.nth j)) K)
 | addr_index_err₁ {C i K} :
   step (state.ret V C (value.int i) $ cont.addr_index₂ none K) none
        (state.err err.mem)
 | addr_index_err₂ {C:env} {a n i K} :
-  addr.get_len Γ C.heap C.vars a n → (i < 0 ∨ (n:ℤ) ≤ (i:ℤ)) →
+  addr.get_len C.heap C.vars a n → (i < 0 ∨ (n:ℤ) ≤ (i:ℤ)) →
   step (state.ret V C (value.int i) $ cont.addr_index₂ (some a) K) none
        (state.err err.mem)
 
