@@ -11,6 +11,7 @@ inductive value
 | cons : value → value → value
 | ref : option ℕ → value
 | arr : ℕ → value → value
+| struct : ident → value → value
 
 inductive addr
 | ref : nat → addr
@@ -18,6 +19,7 @@ inductive addr
 | head : addr → addr
 | tail : addr → addr
 | nth : addr → ℕ → addr
+| field : addr → ident → addr
 
 namespace addr
 
@@ -25,7 +27,7 @@ def nth' (a : addr) : ℕ → addr
 | 0 := a.head
 | (n+1) := (nth' n).tail
 
-def field (sd : sdef) (a : addr) (i : ident) : option addr :=
+def field' (sd : sdef) (a : addr) (i : ident) : addr :=
 a.nth' $ sd.find_index $ λ xt, xt.1 = i
 
 end addr
@@ -82,9 +84,8 @@ inductive default (Γ : ast) : type ⊕ sdef → value → Prop
 | bool : default (inl type.bool) (bool ff)
 | ref {τ} : default (inl $ type.ref τ) (ref none)
 | arr {τ} : default (inl $ type.arr τ) (ref none)
-| struct {s sd v} :
-  Γ.get_sdef s sd →
-  default (inr sd) v → default (inl $ type.struct s) v
+| struct {s sd v} : Γ.get_sdef s sd → default (inr sd) v →
+  default (inl $ type.struct s) (value.struct s v)
 | nil : default (inr []) nil
 | cons {x τ xτs v vs} :
   default (inl τ) v → default (inr xτs) vs →
@@ -110,16 +111,22 @@ end vars
 
 namespace addr
 
-inductive get (h : heap) (η : vars) : addr → value → Prop
+inductive get (Γ : ast) (h : heap) (η : vars) : addr → value → Prop
 | ref {n v} : v ∈ h.nth n → get (ref n) v
 | ident {i v} : (i, v) ∈ η → get (var i) v
 | head {a v vs} : get a (value.cons v vs) → get (head a) v
 | tail {a v vs} : get a (value.cons v vs) → get (tail a) vs
 | nth {a i n v} : get a (value.arr n v) → i < n →
   get (nth' a i) v → get (nth a i) v
+| field {a s sd f v} :
+  get a (value.struct s v) → Γ.get_sdef s sd →
+  get (field' sd a f) v → get (field a f) v
 
-inductive get_len (h : heap) (η : vars) : addr → ℕ → Prop
-| mk {a n v} : get h η a (value.arr n v) → get_len a n
+inductive get_len (Γ : ast) (h : heap) (η : vars) : addr → ℕ → Prop
+| mk {a n v} : get Γ h η a (value.arr n v) → get_len a n
+
+inductive get_struct (Γ : ast) (h : heap) (η : vars) : addr → ident → Prop
+| mk {a s v} : get Γ h η a (value.struct s v) → get_struct a s
 
 inductive update : (value → value → Prop) →
   addr → heap → vars → heap → vars → Prop
@@ -152,7 +159,7 @@ inductive cont : cont_ty → Type
 | assert : list stmt → cont V                  -- assert _ : K
 | ret : cont V                                 -- ret _
 | addr_deref : cont A → cont V                 -- &(*_) : K
-| addr_field : ident → ident → cont A → cont A -- &(_.(s)f) : K
+| addr_field : ident → cont A → cont A         -- &(_.f) : K
 | addr_index₁ : exp → cont A → cont A          -- &(_[e₂]) : K
 | addr_index₂ : option addr → cont A → cont V  -- &(a[_]) : K
 | binop₁ : binop → exp → cont V → cont V       -- _ op e₂ : K
@@ -167,9 +174,8 @@ inductive cont : cont_ty → Type
 
 structure env :=
 (heap : heap)
-(stack : list (ctx × vars × cont V))
+(stack : list (vars × cont V))
 (vars : vars)
-(ctx : ctx)
 
 inductive state
 | stmt : env → stmt → list stmt → state
@@ -182,46 +188,46 @@ open ast.stmt ast.exp.type c0.type
 
 inductive start (Γ : ast) : state → Prop
 | mk {s} : Γ.get_body main (some int) [] s →
-  start (state.stmt ⟨[], [], [], []⟩ s [])
+  start (state.stmt ⟨[], [], []⟩ s [])
 
 inductive state.final : state → Prop
 | err {e} : state.final (state.err e)
 | done {n} : state.final (state.done n)
 
 inductive step_ret : env → value → state → Prop
-| ret {H S η Δ K η' Δ' v} :
-  step_ret ⟨H, (Δ, η, K) :: S, η', Δ'⟩ v (state.ret V ⟨H, S, η, Δ⟩ v K)
-| done {H η Δ n} : step_ret ⟨H, [], η, Δ⟩ (value.int n) (state.done n)
+| ret {H S η K η' v} :
+  step_ret ⟨H, (η, K) :: S, η'⟩ v (state.ret V ⟨H, S, η⟩ v K)
+| done {H η n} : step_ret ⟨H, [], η⟩ (value.int n) (state.done n)
 
-inductive step_call (η₀ : vars) (Δ₀ : ctx) : ctx → value → vars → ctx → Prop
-| nil : step_call [] value.nil η₀ Δ₀
-| cons {x τ xτs v vs η Δ} :
-  step_call xτs vs ((x, v) :: η) ((x, τ) :: Δ) →
-  step_call ((x, τ) :: xτs) (value.cons v vs) η Δ
+inductive step_call (η₀ : vars) : value → vars → Prop
+| nil : step_call value.nil η₀
+| cons {x v vs η} :
+  step_call vs ((x, v) :: η) →
+  step_call (value.cons v vs) η
 
-inductive step_deref : env → option addr → cont V → state → Prop
+inductive step_deref (Γ : ast) : env → option addr → cont V → state → Prop
 | null {C K} : step_deref C none K (state.err err.mem)
 | ok {C:env} {a v K} :
-  addr.get C.heap C.vars a v →
+  addr.get Γ C.heap C.vars a v →
   step_deref C (some a) K (state.ret V C v K)
 
 inductive step_alloc : env → value → cont V → state → Prop
-| mk {H S η Δ v K} :
-  step_alloc ⟨H, S, η, Δ⟩ v K
-    (state.ret V ⟨H ++ [v], S, η, Δ⟩ (value.ref H.length) K)
+| mk {H S η v K} :
+  step_alloc ⟨H, S, η⟩ v K
+    (state.ret V ⟨H ++ [v], S, η⟩ (value.ref H.length) K)
 
 def io := option ((ident × heap × value) × (heap × value))
 
 inductive step (Γ : ast) : state → io → state → Prop
-| decl {H S η Δ v τ τ' s K} :
+| decl {H S η v τ τ' s K} :
   ast.eval_ty Γ τ τ' →
-  step (state.stmt ⟨H, S, η, Δ⟩ (decl v τ s) K) none
-       (state.stmt ⟨H, S, η, (v, τ') :: Δ⟩ s K)
+  step (state.stmt ⟨H, S, η⟩ (decl v τ s) K) none
+       (state.stmt ⟨H, S, η⟩ s K)
 
-| decl_asgn {H S η Δ v τ τ' e s K} :
+| decl_asgn {H S η v τ τ' e s K} :
   ast.eval_ty Γ τ τ' →
-  step (state.stmt ⟨H, S, η, Δ⟩ (decl_asgn v τ e s) K) none
-       (state.stmt ⟨H, S, η, (v, τ') :: Δ⟩ (asgn (lval.var v) e) (s :: K))
+  step (state.stmt ⟨H, S, η⟩ (decl_asgn v τ e s) K) none
+       (state.stmt ⟨H, S, η⟩ (asgn (lval.var v) e) (s :: K))
 
 | If₁ {C c s₁ s₂ K} :
   step (state.stmt C (If c s₁ s₂) K) none
@@ -240,19 +246,19 @@ inductive step (Γ : ast) : state → io → state → Prop
 | asgn₂ {C a e K} :
   step (state.ret A C a $ cont.asgn₁ e K) none
        (state.exp V C e $ cont.asgn₂ a K)
-| asgn₃ {H H' S η η' Δ a v K} :
+| asgn₃ {H H' S η η' a v K} :
   addr.update (λ _, eq v) a H η H' η' →
-  step (state.ret V ⟨H, S, η, Δ⟩ v $ cont.asgn₂ (some a) K) none
-       (state.stmt ⟨H', S, η', Δ⟩ nop K)
-| asgn_err {H S η Δ v K} :
-  step (state.ret V ⟨H, S, η, Δ⟩ v $ cont.asgn₂ none K) none
+  step (state.ret V ⟨H, S, η⟩ v $ cont.asgn₂ (some a) K) none
+       (state.stmt ⟨H', S, η'⟩ nop K)
+| asgn_err {H S η v K} :
+  step (state.ret V ⟨H, S, η⟩ v $ cont.asgn₂ none K) none
        (state.err err.mem)
 
 | asnop₁ {C lv op e K} :
   step (state.stmt C (asnop lv op e) K) none
        (state.exp A C lv.to_exp $ cont.asnop op e K)
 | asnop₂ {C a op e K T} :
-  step_deref C a (cont.binop₁ op e $ cont.asgn₂ a K) T →
+  step_deref Γ C a (cont.binop₁ op e $ cont.asgn₂ a K) T →
   step (state.ret A C a $ cont.asnop op e K) none T
 
 | eval₁ {C e K} :
@@ -346,16 +352,16 @@ inductive step (Γ : ast) : state → io → state → Prop
 | call₁ {C f es K} :
   step (state.exp V C (exp.call f es) K) none
        (state.exp V C es $ cont.call f K)
-| call₂ {H S η Δ η' Δ' f τ xτs s vs K} :
+| call₂ {H S η η' f τ xτs s vs K} :
   Γ.get_body f τ xτs s →
-  step_call η' Δ' xτs vs [] [] →
-  step (state.ret V ⟨H, S, η, Δ⟩ vs $ cont.call f K) none
-       (state.stmt ⟨H, (Δ, η, K) :: S, η', Δ'⟩ s [])
-| call_extern {H S η Δ f vs H' v K} :
+  step_call η' vs [] →
+  step (state.ret V ⟨H, S, η⟩ vs $ cont.call f K) none
+       (state.stmt ⟨H, (η, K) :: S, η'⟩ s [])
+| call_extern {H S η f vs H' v K} :
   Γ.is_extern f →
-  step (state.ret V ⟨H, S, η, Δ⟩ vs $ cont.call f K)
+  step (state.ret V ⟨H, S, η⟩ vs $ cont.call f K)
        (some ((f, H, vs), (H', v)))
-       (state.ret V ⟨H', S, η, Δ⟩ v K)
+       (state.ret V ⟨H', S, η⟩ v K)
 
 | deref {C e K} :
   step (state.exp V C (exp.deref e) K) none
@@ -365,10 +371,9 @@ inductive step (Γ : ast) : state → io → state → Prop
   step (state.exp V C (exp.index e n) K) none
        (state.exp A C e $ cont.addr_index₁ n $ cont.deref K)
 
-| field {C:env} {e s f K} :
-  exp.ok Γ C.ctx e (reg $ struct s) →
+| field {C:env} {e f K} :
   step (state.exp V C (exp.field e f) K) none
-       (state.exp A C e $ cont.addr_field s f $ cont.deref K)
+       (state.exp A C e $ cont.addr_field f $ cont.deref K)
 
 | alloc_ref {C τ τ' v K T} :
   Γ.eval_ty τ τ' →
@@ -407,27 +412,25 @@ inductive step (Γ : ast) : state → io → state → Prop
   step (state.ret A C a $ cont.addr_index₁ n K) none
        (state.exp V C n $ cont.addr_index₂ a K)
 | addr_index₃ {C:env} {a n K} {i:int32} {j:ℕ} :
-  addr.get_len C.heap C.vars a n → (i:ℤ) = j → j < n →
+  addr.get_len Γ C.heap C.vars a n → (i:ℤ) = j → j < n →
   step (state.ret V C (value.int i) $ cont.addr_index₂ (some a) K) none
        (state.ret A C (some (a.nth j)) K)
 | addr_index_err₁ {C i K} :
   step (state.ret V C (value.int i) $ cont.addr_index₂ none K) none
        (state.err err.mem)
 | addr_index_err₂ {C:env} {a n i K} :
-  addr.get_len C.heap C.vars a n → (i < 0 ∨ (n:ℤ) ≤ (i:ℤ)) →
+  addr.get_len Γ C.heap C.vars a n → (i < 0 ∨ (n:ℤ) ≤ (i:ℤ)) →
   step (state.ret V C (value.int i) $ cont.addr_index₂ (some a) K) none
        (state.err err.mem)
 
-| addr_field₁ {C:env} {e s f K} :
-  exp.ok Γ C.ctx e (reg $ struct s) →
+| addr_field₁ {C:env} {e f K} :
   step (state.exp A C (exp.field e f) K) none
-       (state.exp A C e $ cont.addr_field s f K)
-| addr_field₂ {C a s sd f K} :
-  get_sdef Γ s sd →
-  step (state.ret A C (some a) $ cont.addr_field s f K) none
-       (state.ret A C (a.field sd f) K)
-| addr_field_err {C s f K} :
-  step (state.ret A C none $ cont.addr_field s f K) none
+       (state.exp A C e $ cont.addr_field f K)
+| addr_field₂ {C a f K} :
+  step (state.ret A C (some a) $ cont.addr_field f K) none
+       (state.ret A C (some (a.field f)) K)
+| addr_field_err {C f K} :
+  step (state.ret A C none $ cont.addr_field f K) none
        (state.err err.mem)
 
 end c0
