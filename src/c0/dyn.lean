@@ -116,8 +116,8 @@ end vars
 namespace addr
 
 inductive get (h : heap) (η : vars) : addr → value → Prop
-| ref {n v} : v ∈ h.nth n → get (ref n) v
-| ident {i v} : (i, v) ∈ η → get (var i) v
+| ref {} {n v} : v ∈ h.nth n → get (ref n) v
+| var {} {i v} : (i, v) ∈ η → get (var i) v
 | head {a v vs} : get a (value.cons v vs) → get (head a) v
 | tail {a v vs} : get a (value.cons v vs) → get (tail a) vs
 | nth {a i n v} : get a (value.arr n v) → i < n →
@@ -128,17 +128,24 @@ inductive get (h : heap) (η : vars) : addr → value → Prop
 inductive get_len (h : heap) (η : vars) : addr → ℕ → Prop
 | mk {a n v} : get h η a (value.arr n v) → get_len a n
 
-inductive update : (value → value → Prop) →
-  addr → heap → vars → heap → vars → Prop
-| ref {R : value → value → Prop} {n h η v v'} :
-  R v v' → update R (ref n) h η (h.update_nth n v') η
-| ident {R i h η η'} : vars.update R i η η' → update R (var i) h η h η'
-| head {R a h h' η η'} :
-  update (value.at_head R) a h η h' η' → update R (head a) h η h' η'
-| tail {R a h h' η η'} :
-  update (value.at_tail R) a h η h' η' → update R (tail a) h η h' η'
-| nth {R a i h h' η η'} :
-  update (value.at_nth R i) a h η h' η' → update R (nth a i) h η h' η'
+inductive update (h : heap) (η : vars) :
+  (value → value → Prop) → addr → heap → vars → Prop
+| ref {R : value → value → Prop} {n h'} :
+  list.update_at R n h h' → update R (ref n) h' η
+| var {R i η'} : vars.update R i η η' → update R (var i) h η'
+| head {R a h' η'} :
+  update (value.at_head R) a h' η' → update R (head a) h' η'
+| tail {R a h' η'} :
+  update (value.at_tail R) a h' η' → update R (tail a) h' η'
+| nth {R a i h' η'} :
+  update (value.at_nth R i) a h' η' → update R (nth a i) h' η'
+
+inductive assign (h : heap) (η : vars) (v : value) :
+  addr → heap → vars → Prop
+| update {a h' η'} :
+  addr.update h η (λ _, eq v) a h' η' → assign a h' η'
+| insert {x} : x ∉ (η : vars).map prod.fst →
+  assign (addr.var x) h ((x, v) :: η)
 
 end addr
 
@@ -249,7 +256,7 @@ inductive step (Γ : ast) : state → io → state → Prop
   step (state.ret A C a $ cont.asgn₁ e K) none
        (state.exp V C e $ cont.asgn₂ a K)
 | asgn₃ {H H' S η η' a v K} :
-  addr.update (λ _, eq v) a H η H' η' →
+  addr.assign H η v a H' η' →
   step (state.ret V ⟨H, S, η⟩ v $ cont.asgn₂ (some a) K) none
        (state.stmt ⟨H', S, η'⟩ nop K)
 | asgn_err {H S η v K} :

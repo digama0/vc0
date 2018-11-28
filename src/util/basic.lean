@@ -68,6 +68,32 @@ theorem eta {α} {β : α → Type*} : ∀ x : Σ a, β a, (⟨x.1, x.2⟩ : Σ 
 
 end sigma
 
+namespace list
+
+inductive update_at {α} (R : α → α → Prop) : ℕ → list α → list α → Prop
+| one {a b l} : R a b → update_at 0 (a :: l) (b :: l)
+| cons {n a l l'} : update_at n l l' → update_at (n+1) (a :: l) (a :: l')
+
+theorem update_at_forall₂ {α} {R : α → α → Prop} :
+  ∀ {n l₁ l₂}, update_at R n l₁ l₂ → forall₂ (λ x y, R x y ∨ x = y) l₁ l₂
+| _ _ _ (@update_at.one _ _ a b l h) :=
+  forall₂.cons (or.inl h) (@forall₂_refl _ _ ⟨by exact λ a, or.inr rfl⟩ _)
+| _ _ _ (@update_at.cons _ _ n a l₁ l₂ h) :=
+  forall₂.cons (or.inr rfl) (update_at_forall₂ h)
+
+theorem update_at_forall₂' {α} {R : α → α → Prop} [is_refl α R]
+  {n l₁ l₂} (h : update_at R n l₁ l₂) : forall₂ R l₁ l₂ :=
+(update_at_forall₂ h).imp (λ a b, or.rec id (by rintro rfl; apply refl))
+
+lemma forall₂.mp_trans {α β γ} {r : α → β → Prop} {q : β → γ → Prop}
+  {s : α → γ → Prop} (h : ∀a b c, r a b → q b c → s a c) :
+  ∀{l₁ l₂ l₃}, forall₂ r l₁ l₂ → forall₂ q l₂ l₃ → forall₂ s l₁ l₃
+| []      []      []      forall₂.nil           forall₂.nil           := forall₂.nil
+| (a::l₁) (b::l₂) (c::l₃) (forall₂.cons hr hrs) (forall₂.cons hq hqs) :=
+  forall₂.cons (h a b c hr hq) (forall₂.mp_trans hrs hqs)
+
+end list
+
 def int32 := zmod (2^32)
 
 instance int32.has_coe : has_coe int32 ℤ := sorry
