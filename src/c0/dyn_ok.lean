@@ -118,8 +118,10 @@ inductive ok (Γ : ast) (E : heap_ty) (σ : vars_ty) : addr → vtype → Prop
 | head {a τ τs} : ok a (vtype.cons τ τs) → ok (head a) τ
 | tail {a τ τs} : ok a (vtype.cons τ τs) → ok (tail a) τs
 | nth {a i v} : ok a (vtype.arr v) → ok (nth a i) v
-| field {a s f sτ τ} : vtype.field Γ s f sτ τ →
-  ok a sτ → ok (field a f) τ
+| field {a s f τ sd vτ} :
+  Γ.get_sdef s sd → (f, τ) ∈ sd →
+  vtype.of_ty (ast.exp.type.reg τ) vτ →
+  ok a (vtype.struct s) → ok (field a f) vτ
 end addr
 
 def addr_opt.ok (Γ : ast) (E : heap_ty) (σ : vars_ty) :
@@ -153,7 +155,7 @@ inductive cont.ok (Γ : ast) (E : heap_ty) (σ : vars_ty)
 | asnop {op e τ vτ K} :
   binop.ok_asnop op τ →
   vtype.of_ty (reg τ) vτ →
-  exp.ok_vtype Γ Δ e vτ →
+  exp.ok Γ Δ e (reg τ) →
   stmt_list.ok_vtype Γ ret Δ K →
   cont.ok (cont.asnop op e K) vτ
 

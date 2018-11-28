@@ -48,6 +48,10 @@ inductive is_field (f : ident) : value → value → Prop
 | one {v vs} : is_field (cons (named f v) vs) v
 | cons {v' v vs} : is_field vs v → is_field (cons v' vs) v
 
+inductive is_nth : ℕ → value → value → Prop
+| zero {v vs} : is_nth 0 (cons v vs) v
+| succ {n v vs v'} : is_nth n vs v' → is_nth (n+1) (cons v vs) v'
+
 open sum
 def to_err : option int32 → value ⊕ err
 | none := inr err.arith
@@ -120,8 +124,8 @@ inductive get (h : heap) (η : vars) : addr → value → Prop
 | var {} {i v} : (i, v) ∈ η → get (var i) v
 | head {a v vs} : get a (value.cons v vs) → get (head a) v
 | tail {a v vs} : get a (value.cons v vs) → get (tail a) vs
-| nth {a i n v} : get a (value.arr n v) → i < n →
-  get (nth' a i) v → get (nth a i) v
+| nth {a i n v v'} : get a (value.arr n v) →
+  i < n → value.is_nth i v v' → get (nth a i) v'
 | field {a f v' v} :
   get a v' → value.is_field f v' v → get (field a f) v
 
@@ -216,7 +220,7 @@ inductive step_call (η₀ : vars) : value → vars → Prop
 
 inductive step_deref : env → option addr → cont V → state → Prop
 | null {C K} : step_deref C none K (state.err err.mem)
-| ok {C:env} {a v K} :
+| deref {C:env} {a v K} :
   addr.get C.heap C.vars a v →
   step_deref C (some a) K (state.ret V C v K)
 

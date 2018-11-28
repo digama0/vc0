@@ -92,6 +92,11 @@ lemma forall₂.mp_trans {α β γ} {r : α → β → Prop} {q : β → γ → 
 | (a::l₁) (b::l₂) (c::l₃) (forall₂.cons hr hrs) (forall₂.cons hq hqs) :=
   forall₂.cons (h a b c hr hq) (forall₂.mp_trans hrs hqs)
 
+lemma forall₂.nth {α β} {R : α → β → Prop} :
+  ∀{l₁ l₂}, forall₂ R l₁ l₂ → ∀ {a b n}, a ∈ l₁.nth n → b ∈ l₂.nth n → R a b
+| (a::l₁) (b::l₂) (forall₂.cons hr hrs) _  _  0     rfl rfl := hr
+| (a::l₁) (b::l₂) (forall₂.cons hr hrs) a' b' (n+1) h₁  h₂  := forall₂.nth hrs h₁ h₂
+
 end list
 
 def int32 := zmod (2^32)
