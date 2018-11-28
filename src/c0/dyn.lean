@@ -44,6 +44,10 @@ def at_nth' (R : value → value → Prop) : ℕ → value → value → Prop
 inductive at_nth (R : value → value → Prop) (i : ℕ) : value → value → Prop
 | mk {v v' n} : i < n → at_nth' R i v v' → at_nth (arr n v) (arr n v')
 
+inductive is_field (f : ident) : value → value → Prop
+| one {v vs} : is_field (cons (named f v) vs) v
+| cons {v' v vs} : is_field vs v → is_field (cons v' vs) v
+
 open sum
 def to_err : option int32 → value ⊕ err
 | none := inr err.arith
@@ -98,6 +102,9 @@ end value
 
 @[reducible] def vars := list (ident × value)
 
+instance heap.empty : has_emptyc heap := ⟨[]⟩
+instance vars.empty : has_emptyc vars := ⟨[]⟩
+
 namespace vars
 
 inductive update (R : value → value → Prop) (i : ident) : vars → vars → Prop
@@ -115,8 +122,8 @@ inductive get (h : heap) (η : vars) : addr → value → Prop
 | tail {a v vs} : get a (value.cons v vs) → get (tail a) vs
 | nth {a i n v} : get a (value.arr n v) → i < n →
   get (nth' a i) v → get (nth a i) v
-| field {a i f v} :
-  get (nth' a i) (value.named f v) → get (field a f) v
+| field {a f v' v} :
+  get a v' → value.is_field f v' v → get (field a f) v
 
 inductive get_len (h : heap) (η : vars) : addr → ℕ → Prop
 | mk {a n v} : get h η a (value.arr n v) → get_len a n
@@ -170,6 +177,8 @@ structure env :=
 (stack : list (vars × cont V))
 (vars : vars)
 
+instance env.empty : has_emptyc env := ⟨⟨∅, [], ∅⟩⟩
+
 inductive state
 | stmt : env → stmt → list stmt → state
 | exp : ∀ α, env → exp → cont α → state
@@ -181,7 +190,7 @@ open ast.stmt ast.exp.type c0.type
 
 inductive start (Γ : ast) : state → Prop
 | mk {s} : Γ.get_body main (some int) [] s →
-  start (state.stmt ⟨[], [], []⟩ s [])
+  start (state.stmt ∅ s [])
 
 inductive state.final : state → Prop
 | err {e} : state.final (state.err e)
@@ -227,7 +236,7 @@ inductive step (Γ : ast) : state → io → state → Prop
        (state.exp V C c $ cont.If s₁ s₂ K)
 | If₂ {C b s₁ s₂ K} :
   step (state.ret V C (value.bool b) $ cont.If s₁ s₂ K) none
-       (state.stmt C (if b then s₁ else s₂) K)
+       (state.stmt C (cond b s₁ s₂) K)
 
 | while {C c s K} :
   step (state.stmt C (while c s) K) none

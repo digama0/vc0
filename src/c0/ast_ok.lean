@@ -283,7 +283,7 @@ inductive ok (Γ : ast) : gdecl → Prop
 | sdefn (s xτs) :
   (∀ sd, ¬ get_sdef Γ s sd) →
   (list.map prod.fst xτs).nodup →
-  (∀ (xτ : ident × type), xτ ∈ xτs → ∃ τ, eval_ty Γ xτ.2 τ) →
+  (∀ (xτ : ident × type), xτ ∈ xτs → ∃ τ, eval_ty Γ xτ.2 τ ∧ Γ.sized τ) →
   ok (sdecl s (some xτs))
 
 end gdecl
