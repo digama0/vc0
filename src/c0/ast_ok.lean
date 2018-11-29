@@ -259,6 +259,14 @@ inductive init : finset ident → finset ident → stmt → finset ident → Pro
 | seq {s₁ s₂ γ δ₁ δ₂ δ₃} :
   init γ δ₁ s₁ δ₂ → init γ δ₂ s₂ δ₃ → init γ δ₁ (seq s₁ s₂) δ₃
 
+inductive returns : stmt → Prop
+| decl {v τ s} : returns s → returns (decl v τ s)
+| decl_asgn {v e τ s} : returns s → returns (decl_asgn v τ e s)
+| If {c s₁ s₂} : returns s₁ → returns s₂ → returns (If c s₁ s₂)
+| ret {e} : returns (ret e)
+| seq_left {s₁ s₂} : returns s₁ → returns (seq s₁ s₂)
+| seq_right {s₁ s₂} : returns s₂ → returns (seq s₁ s₂)
+
 def ok_init (Δ : ctx) (s : stmt) : Prop :=
 let γ := (Δ.map prod.fst).to_finset in ∃ δ', init γ γ s δ'
 
@@ -274,7 +282,7 @@ inductive ok (Γ : ast) : gdecl → Prop
     header = ff ∧
     ¬ is_fdef Γ f ∧
     stmt.ok (fdecl header f xτs ret body :: Γ) ret' xτs' s ∧
-    s.ok_init xτs') →
+    s.returns ∧ s.ok_init xτs') →
   ok (fdecl header f xτs ret body)
 | typedef (x τ τ') :
   (∀ τ, typedef x τ ∉ Γ) →

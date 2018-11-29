@@ -267,7 +267,7 @@ inductive fdecl_ok (Γ : ast) (header xτs ret body) : Prop
   (∀ s ∈ (body : option stmt),
     header = ff ∧
     stmt.ok Γ ret' xτs' s ∧
-    s.ok_init xτs') →
+    s.returns ∧ s.ok_init xτs') →
   fdecl_ok
 
 theorem fdecl_ok_of_mem {Γ : ast} (ok : Γ.ok) :
@@ -282,8 +282,8 @@ ast.ok_induction ok (by rintro _ _ _ _ _ ⟨⟩) $
       h₃.imp (λ _ _ h, h.imp (λ _ _, id) (λ _ _ ⟨h₁, h₂⟩, ⟨h₁.weak, h₂⟩)),
       h₁.imp (λ _ _ h, h.weak),
       λ s hs, _⟩,
-    rcases h₄ s hs with ⟨hs₁, _, hs₂, hs₃⟩,
-    exact ⟨hs₁, hs₂, hs₃⟩ },
+    rcases h₄ s hs with ⟨hs₁, _, hs₂, hs₃, hs₄⟩,
+    exact ⟨hs₁, hs₂, hs₃, hs₄⟩ },
   { cases IH m with xτs' ret' h₁ h₂ h₃ h₄,
     refine ⟨xτs', ret', h₁,
       h₂.imp (λ _ _ h, h.imp (λ _ _, id) (λ _ _ ⟨h₁, h₂⟩, ⟨h₁.weak, h₂⟩)),
@@ -342,8 +342,8 @@ decidable_of_iff' (∃ d ∈ Γ, ∃ body, d = gdecl.sdecl s (some body))
 def get_sdef_dec {Γ : ast} (ok : Γ.ok) {s} : decidable (∃ sd, get_sdef Γ s sd) :=
 decidable_of_iff' _ (get_sdef_ex_iff ok)
 
-theorem get_body_ok {Γ : ast} (ok : Γ.ok) {f τ Δ s}
-  (h : Γ.get_body f τ Δ s) : stmt.ok Γ τ Δ s :=
+theorem get_body_ok' {Γ : ast} (ok : Γ.ok) {f τ Δ s} (h : Γ.get_body f τ Δ s) :
+  stmt.ok Γ τ Δ s ∧ stmt.returns s ∧ stmt.ok_init Δ s :=
 begin
   cases h,
   cases fdecl_ok_of_mem ok h_a,
@@ -351,8 +351,12 @@ begin
   have : list.forall₂ (prod.forall₂ eq (eval_ty Γ)) h_xτs xτs' :=
     a_1.imp (λ _ _ h, h.imp (λ _ _, id) (λ _ _, and.left)),
   cases ast.eval_ty.determ_list_prod ok h_a_1 this,
-  exact (a_3 _ rfl).2.1
+  exact (a_3 _ rfl).2
 end
+
+theorem get_body_ok {Γ : ast} (ok : Γ.ok) {f τ Δ s}
+  (h : Γ.get_body f τ Δ s) : stmt.ok Γ τ Δ s :=
+(get_body_ok' ok h).1
 
 theorem vars.ok.empty {Γ H} : vars.ok Γ H ∅ ∅ := list.forall₂.nil
 
@@ -368,12 +372,29 @@ theorem vars.ok.nd {Γ H σ η} (h : vars.ok Γ H η σ) :
   (list.map prod.fst η).nodup :=
 by rw h.fst; exact σ.2
 
+theorem vars.ok.mem {Γ H σ η} (ηok : vars.ok Γ H η σ)
+  {i v τ} (h₁ : (i, v) ∈ η) (h₂ : (i, τ) ∈ σ.1) :
+  value.ok Γ H v τ :=
+begin
+  cases σ with σ nd, have := ηok,
+  dsimp only [vars.ok] at ηok,
+  induction ηok, {cases h₁},
+  rcases h₁ with rfl | h₁; rcases h₂ with rfl | h₂,
+  { cases ηok_a_1, assumption },
+  { rcases ηok_a_1 with ⟨i, _, _, τ', rfl, _⟩,
+    cases (list.nodup_cons.1 nd).1 (list.mem_map_of_mem prod.fst h₂:_) },
+  { rcases ηok_a_1 with ⟨i, v', _, _, rfl, _⟩,
+    cases (list.nodup_cons.1 $ vars.ok.nd this).1
+      (list.mem_map_of_mem prod.fst h₁:_) },
+  { exact ηok_ih h₁ (list.nodup_cons.1 nd).2 h₂ ηok_a_2 }
+end
+
 theorem env.ok.empty {Γ} : env.ok Γ ∅ ∅ vtype.int :=
 ⟨ctx.ok.nil, list.forall₂.nil, vars.ok.empty, stack.ok.nil⟩
 
 theorem start_ok (Γ : ast) (ok : Γ.ok) : ∀ s, start Γ s → state.ok Γ s
-| _ (@start.mk _ s h) := state.ok.stmt (some type.int)
-  env.ok.empty vtype.of_ty.int (get_body_ok ok h) stmt_list.ok.nil
+| _ (@start.mk _ s h) := let ⟨h₁, h₂, _⟩ := get_body_ok' ok h in
+  state.ok.stmt (some type.int) env.ok.empty vtype.of_ty.int h₁ (or.inl h₂)
 
 namespace value
 
@@ -532,6 +553,23 @@ end
 
 end addr
 
+theorem stmt_list.ok.eq_none {Γ Δ ret}
+  (Kok : stmt_list.ok Γ ret Δ []) : ret = none :=
+by induction Δ with d Δ; cases Kok;
+   [exact Kok_a, exact Kok_a, exact Δ_ih Kok_a]
+
+theorem stmt_list.ok.cons_inv {Γ Δ ret s K}
+  (Δok : ctx.ok Δ) (Kok : stmt_list.ok Γ ret Δ (s :: K)) :
+  ∃ Δ', ctx.ok Δ' ∧ stmt.ok Γ ret Δ' s ∧
+    (stmt.returns s ∨ stmt_list.ok Γ ret Δ' K) :=
+begin
+  generalize e : (s :: K : list stmt) = K', rw e at Kok,
+  induction Kok generalizing ; cases e,
+  { exact ⟨_, Δok, Kok_a, or.inl Kok_a_1⟩ },
+  { exact ⟨_, Δok, Kok_a, or.inr Kok_a_1⟩ },
+  { exact Kok_ih (list.nodup_of_nodup_cons Δok) rfl }
+end
+
 theorem step_deref.ok {Γ E σs Δ σ H S η ret a τ K s'}
   (Cok : env.ok Γ ⟨E, σs, σ, Δ⟩ ⟨H, S, η⟩ ret)
   (aok : addr_opt.ok Γ E σ a τ)
@@ -544,46 +582,68 @@ begin
     exact state.ok.ret ⟨Δok, Eok, ηok, Sok⟩ (h_a_1.ok Eok ηok aok) Kok }
 end
 
+theorem step_ret.ok {Γ E σs Δ σ H S η τ v s'}
+  (Cok : env.ok Γ ⟨E, σs, σ, Δ⟩ ⟨H, S, η⟩ τ)
+  (vok : value.ok Γ E v τ)
+  (h : step_ret ⟨H, S, η⟩ v s') : state.ok Γ s' :=
+begin
+  cases Cok with E σs σ H S η Δ _ Δok Eok ηok Sok,
+  cases h,
+  { cases Sok with Δ' η K' S' σ σs τ₁ τ' Δok' ηok' Kok' Sok',
+    exact state.ok.ret ⟨Δok', Eok, ηok', Sok'⟩ vok Kok' },
+  { apply state.ok.done }
+end
+
 theorem preservation {Γ : ast} (ok : Γ.ok)
   {s} (sok : state.ok Γ s) {o} (iok : io.ok Γ o)
   {s'} (H : step Γ s o s') : state.ok Γ s' :=
 begin
   cases H,
+  try_for 10 {
   case c0.step.decl : H S η v τ τ' s K H₁ {
     rcases sok with ⟨_, _, τ, _, _, t,
       ⟨E, σs, σ, H, η, S, Δ, _, Δok, Eok, ηok, Sok⟩,
       tτ, ⟨_, _, _, τ', _, hn, ττ', τsm, sok⟩, Kok⟩,
-    exact state.ok.stmt t ⟨Δok.cons hn, Eok, ηok, Sok⟩ tτ sok Kok.weak },
+    refine state.ok.stmt t ⟨Δok.cons hn, Eok, ηok, Sok⟩ tτ sok _,
+    rcases Kok with ⟨⟨_, _, _, r⟩⟩|Kok,
+    { exact or.inl r },
+    { exact or.inr Kok.weak } },
   case c0.step.decl_asgn : H S η v τ τ' e s K H₁ {
     rcases sok with ⟨_, _, τ, _, _, t,
       ⟨E, σs, σ, H, η, S, Δ, _, Δok, Eok, ηok, Sok⟩,
       tτ, sok, Kok⟩, cases sok,
-    exact state.ok.stmt t ⟨Δok.cons sok_a_1, Eok, ηok, Sok⟩
+    refine state.ok.stmt t ⟨Δok.cons sok_a_1, Eok, ηok, Sok⟩
       tτ (stmt.ok.asgn _ (exp.ok.var Γ (or.inl rfl)) sok_a_4.weak' sok_a_3)
-      (Kok.weak.cons sok_a_5) },
+      (or.inr _),
+    rcases Kok with ⟨⟨⟩⟩|Kok,
+    { exact stmt_list.ok.one sok_a_5 Kok_a },
+    { exact Kok.weak.cons sok_a_5 } },
   case c0.step.If₁ : C c s₁ s₂ K {
     rcases sok with ⟨T, _, τ, _, _, t,
       ⟨E, σs, σ, H, η, S, Δ, _, Δok, Eok, ηok, Sok⟩,
       tτ, sok, Kok⟩, cases sok,
-    exact state.ok.exp ⟨Δok, Eok, ηok, Sok⟩
+    refine state.ok.exp ⟨Δok, Eok, ηok, Sok⟩
       ⟨_, sok_a_1, vtype.of_ty.bool⟩
-      (cont.ok.If tτ sok_a_2 sok_a_3 Kok) },
+      (cont.ok.If tτ sok_a_2 sok_a_3 _),
+    rcases Kok with ⟨⟨⟩⟩|Kok,
+    { exact or.inl ⟨Kok_a, Kok_a_1⟩ },
+    { exact or.inr Kok } },
   case c0.step.If₂ : C b s₁ s₂ K {
     rcases sok with _|_|⟨E, σs, σ, H, η, S, Δ, ret, τ, α, v, K,
       ⟨E, σs, σ, H, η, S, Δ, _, Δok, Eok, ηok, Sok⟩,
       _, _, _, _, t, tτ, s₁ok, s₂ok, Kok⟩,
-    refine state.ok.stmt t ⟨Δok, Eok, ηok, Sok⟩ tτ _ Kok,
-    cases b; [exact s₂ok, exact s₁ok] },
+    cases b; refine state.ok.stmt t ⟨Δok, Eok, ηok, Sok⟩ tτ _ _,
+    exacts [s₂ok, Kok.imp_left and.right, s₁ok, Kok.imp_left and.left] },
   case c0.step.while : C c s K {
     rcases sok with ⟨T, _, τ, _, _, t,
       ⟨E, σs, σ, H, η, S, Δ, _, Δok, Eok, ηok, Sok⟩,
-      tτ, sok, Kok⟩, cases id sok,
+      tτ, sok, ⟨⟨⟩⟩|Kok⟩, cases id sok,
     exact state.ok.exp ⟨Δok, Eok, ηok, Sok⟩ ⟨_, a, vtype.of_ty.bool⟩
-      (cont.ok.If tτ (a_1.seq sok) stmt.ok.nop Kok) },
+      (cont.ok.If tτ (a_1.seq sok) stmt.ok.nop (or.inr Kok)) },
   case c0.step.asgn₁ : C lv e K {
     rcases sok with ⟨T, _, τ, _, _, t,
       ⟨E, σs, σ, H, η, S, Δ, _, Δok, Eok, ηok, Sok⟩,
-      tτ, sok, Kok⟩, cases sok,
+      tτ, sok, ⟨⟨⟩⟩|Kok⟩, cases sok,
     rcases vtype.of_ty_fn sok_τ with ⟨vτ, hv⟩,
     exact state.ok.exp ⟨Δok, Eok, ηok, Sok⟩ ⟨_, sok_a_1, hv⟩
       (cont.ok.asgn₁ _ _ ⟨_, sok_a_2, hv⟩ ⟨t, tτ, Kok⟩) },
@@ -598,12 +658,12 @@ begin
       ⟨E, σs, σ, H, η, S, Δ, _, Δok, Eok, ηok, Sok⟩,
       vok, _|_|⟨_, _, _, aok, t, tτ, Kok⟩⟩,
     rcases h.ok Eok ηok aok vok with ⟨σ', Eok', ηok'⟩,
-    exact state.ok.stmt t ⟨Δok, Eok', ηok', Sok⟩ tτ stmt.ok.nop Kok },
+    exact state.ok.stmt t ⟨Δok, Eok', ηok', Sok⟩ tτ stmt.ok.nop (or.inr Kok) },
   case c0.step.asgn_err : H S η v K { apply state.ok.err },
   case c0.step.asnop₁ : C lv op e K {
     rcases sok with ⟨T, _, τ, _, _, t,
       ⟨E, σs, σ, H, η, S, Δ, _, Δok, Eok, ηok, Sok⟩,
-      tτ, sok, Kok⟩, cases id sok,
+      tτ, sok, ⟨⟨⟩⟩|Kok⟩, cases id sok,
     rcases vtype.of_ty_fn (exp.type.reg τ_1) with ⟨vτ, hv⟩,
     exact state.ok.exp ⟨Δok, Eok, ηok, Sok⟩ ⟨_, a, hv⟩
       (cont.ok.asnop _ _ a_2 hv a_1 ⟨t, tτ, Kok⟩) },
@@ -614,6 +674,84 @@ begin
     exact step_deref.ok ⟨Δok, Eok, ηok, Sok⟩ aok
       (cont.ok.binop₁ Kok_a_a Kok_a_1 Kok_a_1 Kok_a_2 $
        cont.ok.asgn₂ aok Kok_a_3) h },
+  case c0.step.eval₁ : C e K {
+    rcases sok with ⟨T, _, τ, _, _, t,
+      ⟨E, σs, σ, H, η, S, Δ, _, Δok, Eok, ηok, Sok⟩,
+      tτ, sok, ⟨⟨⟩⟩|Kok⟩, cases id sok,
+    rcases vtype.of_ty_fn τ_1 with ⟨vτ, hv⟩,
+    exact state.ok.exp ⟨Δok, Eok, ηok, Sok⟩ ⟨_, a, hv⟩
+      (cont.ok.eval _ _ ⟨t, tτ, Kok⟩) },
+  case c0.step.eval₂ : C e K {
+    rcases sok with _|_|⟨E, σs, σ, H, η, S, Δ, ret, τ, α, v, K,
+      ⟨E, σs, σ, H, η, S, Δ, _, Δok, Eok, ηok, Sok⟩,
+      aok, Kok⟩,
+    cases Kok, rcases Kok_a with ⟨t, tτ, Kok⟩,
+    exact state.ok.stmt t ⟨Δok, Eok, ηok, Sok⟩ tτ stmt.ok.nop (or.inr Kok) },
+  case c0.step.assert₁ : C e K {
+    rcases sok with ⟨T, _, τ, _, _, t,
+      ⟨E, σs, σ, H, η, S, Δ, _, Δok, Eok, ηok, Sok⟩,
+      tτ, sok, ⟨⟨⟩⟩|Kok⟩, cases id sok,
+    exact state.ok.exp ⟨Δok, Eok, ηok, Sok⟩ ⟨_, a, vtype.of_ty.bool⟩
+      (cont.ok.assert _ _ ⟨t, tτ, Kok⟩) },
+  case c0.step.assert₂ : C b K {
+    rcases sok with _|_|⟨E, σs, σ, H, η, S, Δ, ret, τ, α, v, K,
+      ⟨E, σs, σ, H, η, S, Δ, _, Δok, Eok, ηok, Sok⟩,
+      aok, Kok⟩,
+    cases b, {apply state.ok.err},
+    cases Kok, rcases Kok_a with ⟨t, tτ, Kok⟩,
+    exact state.ok.stmt t ⟨Δok, Eok, ηok, Sok⟩ tτ stmt.ok.nop (or.inr Kok) },
+  case c0.step.ret₁ : C e K {
+    rcases sok with ⟨T, _, τ, _, _, t,
+      ⟨E, σs, σ, H, η, S, Δ, _, Δok, Eok, ηok, Sok⟩,
+      tτ, sok, Kok⟩, cases id sok, cases a,
+    exact state.ok.exp ⟨Δok, Eok, ηok, Sok⟩ ⟨_, a_a_1, tτ⟩ cont.ok.ret },
+  case c0.step.ret₂ : C v h {
+    rcases sok with _|_|⟨E, σs, σ, H, η, S, Δ, ret, τ, α, v, K,
+      ⟨E, σs, σ, H, η, S, Δ, _, Δok, Eok, ηok, Sok⟩,
+      vok, ⟨⟩⟩,
+    exact step_ret.ok ⟨Δok, Eok, ηok, Sok⟩ vok h },
+  case c0.step.ret_none : C v h {
+    rcases sok with ⟨T, _, τ, _, _, t,
+      ⟨E, σs, σ, H, η, S, Δ, _, Δok, Eok, ηok, Sok⟩,
+      tτ, sok, Kok⟩, cases id sok, cases a, cases tτ,
+    exact step_ret.ok ⟨Δok, Eok, ηok, Sok⟩ value.ok.nil h },
+  case c0.step.nop₁ : C h {
+    rcases sok with ⟨T, _, τ, _, _, t,
+      ⟨E, σs, σ, H, η, S, Δ, _, Δok, Eok, ηok, Sok⟩,
+      tτ, _, ⟨⟨⟩⟩|Kok⟩, cases Kok.eq_none, cases tτ,
+    exact step_ret.ok ⟨Δok, Eok, ηok, Sok⟩ value.ok.nil h },
+  case c0.step.nop₂ : C s K {
+    rcases sok with ⟨T, _, τ, _, _, t,
+      ⟨E, σs, σ, H, η, S, Δ, _, Δok, Eok, ηok, Sok⟩,
+      tτ, _, ⟨⟨⟩⟩|Kok⟩,
+    rcases Kok.cons_inv Δok with ⟨Δ', Δok', sok, Kok⟩,
+    exact state.ok.stmt t ⟨Δok', Eok, ηok, Sok⟩ tτ sok Kok },
+  },
+  case c0.step.seq : C s₁ s₂ K {
+    rcases sok with ⟨T, _, τ, _, _, t,
+      ⟨E, σs, σ, H, η, S, Δ, _, Δok, Eok, ηok, Sok⟩,
+      tτ, sok, ⟨⟨⟩⟩|Kok⟩; cases id sok,
+    { exact state.ok.stmt t ⟨Δok, Eok, ηok, Sok⟩ tτ a (or.inl sok_a_1_a) },
+    { exact state.ok.stmt t ⟨Δok, Eok, ηok, Sok⟩ tτ a
+        (or.inr $ stmt_list.ok.one a_1 sok_a_1_a) },
+    { exact state.ok.stmt t ⟨Δok, Eok, ηok, Sok⟩ tτ a (or.inr $ Kok.cons a_1) } },
+  case c0.step.int : C n K {
+    rcases sok with _|⟨E, σs, σ, H, η, S, Δ, ret, τ, α, v, K,
+      ⟨E, σs, σ, H, η, S, Δ, _, Δok, Eok, ηok, Sok⟩,
+      ⟨t, ⟨⟩, tτ⟩, Kok⟩, cases tτ,
+    exact state.ok.ret ⟨Δok, Eok, ηok, Sok⟩ value.ok.int Kok },
+  case c0.step.bool : C b K {
+    rcases sok with _|⟨E, σs, σ, H, η, S, Δ, ret, τ, α, v, K,
+      ⟨E, σs, σ, H, η, S, Δ, _, Δok, Eok, ηok, Sok⟩,
+      ⟨t, ⟨⟩, tτ⟩, Kok⟩, cases tτ,
+    exact state.ok.ret ⟨Δok, Eok, ηok, Sok⟩ value.ok.bool Kok },
+  case c0.step.null : C K {
+    rcases sok with _|⟨E, σs, σ, H, η, S, Δ, ret, τ, α, v, K,
+      ⟨E, σs, σ, H, η, S, Δ, _, Δok, Eok, ηok, Sok⟩,
+      ⟨t, ⟨⟩, tτ⟩, Kok⟩, cases tτ,
+    exact state.ok.ret ⟨Δok, Eok, ηok, Sok⟩ value.ok.null Kok },
+
+
 end
 
 theorem progress {Γ : ast} (ok : Γ.ok)

@@ -286,7 +286,7 @@ inductive step (Γ : ast) : state → io → state → Prop
        (state.exp V C e $ cont.assert K)
 | assert₂ {C b K} :
   step (state.ret V C (value.bool b) $ cont.assert K) none
-       (if b then state.stmt C nop K else state.err err.abort)
+       (cond b (state.stmt C nop K) (state.err err.abort))
 
 | ret₁ {C e K} :
   step (state.stmt C (ret (some e)) K) none

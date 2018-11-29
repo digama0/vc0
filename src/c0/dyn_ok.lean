@@ -102,10 +102,10 @@ def stmt.ok_vtype (Γ : ast) (ret : vtype) (Δ : ctx) (s : stmt) : Prop :=
 ∃ τ, vtype.of_ty (rego τ) ret ∧ stmt.ok Γ τ Δ s
 
 inductive stmt_list.ok (Γ : ast) (ret : option type) : ctx → list stmt → Prop
-| nil {} {Δ} : stmt_list.ok Δ []
+| nil {} {Δ} : ret = none → stmt_list.ok Δ []
+| one {} {Δ s K} : stmt.ok Γ ret Δ s → s.returns → stmt_list.ok Δ (s::K)
 | cons {} {Δ s K} :
-  stmt.ok Γ ret Δ s →
-  stmt_list.ok Δ K → stmt_list.ok Δ (s::K)
+  stmt.ok Γ ret Δ s → stmt_list.ok Δ K → stmt_list.ok Δ (s::K)
 | weak {} {Δ xτ K} : stmt_list.ok Δ K → stmt_list.ok (xτ::Δ) K
 
 def stmt_list.ok_vtype (Γ : ast) (ret : vtype) (Δ : ctx) (K : list stmt) : Prop :=
@@ -140,7 +140,7 @@ inductive cont.ok (Γ : ast) (E : heap_ty) (σ : vars_ty)
   vtype.of_ty (rego τ) ret →
   stmt.ok Γ τ Δ s₁ →
   stmt.ok Γ τ Δ s₂ →
-  stmt_list.ok Γ τ Δ K →
+  s₁.returns ∧ s₂.returns ∨ stmt_list.ok Γ τ Δ K →
   cont.ok (cont.If s₁ s₂ K) vtype.bool
 
 | asgn₁ {e τ K} :
@@ -167,7 +167,7 @@ inductive cont.ok (Γ : ast) (E : heap_ty) (σ : vars_ty)
   stmt_list.ok_vtype Γ ret Δ K →
   cont.ok (cont.assert K) vtype.bool
 
-| ret : cont.ok cont.ret ret
+| ret {} : cont.ok cont.ret ret
 
 | addr_deref {τ K} :
   cont.ok K τ → cont.ok (cont.addr_deref K) (vtype.ref τ)
@@ -269,7 +269,7 @@ inductive state.ok (Γ : ast) : state → Prop
   env.ok Γ T C vτ →
   vtype.of_ty (rego τ) vτ →
   stmt.ok Γ τ T.ctx s →
-  stmt_list.ok Γ τ T.ctx ss →
+  s.returns ∨ stmt_list.ok Γ τ T.ctx ss →
   state.ok (state.stmt C s ss)
 | exp {E σs σ H η S Δ ret τ e α K} :
   env.ok Γ ⟨E, σs, σ, Δ⟩ ⟨H, S, η⟩ ret →
