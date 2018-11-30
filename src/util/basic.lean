@@ -208,6 +208,10 @@ theorem mem_kerase {α β} [decidable_eq α] {s : list (sigma β)}
 mem_erasep _ $ (nodupkeys_iff_pairwise.1 nd).imp $
 by rintro x y h rfl; exact h
 
+@[simp] theorem cons_to_finset {α} [decidable_eq α] (a l) :
+  (a :: l : list α).to_finset = insert a l.to_finset :=
+by ext; simp
+
 end list
 
 def prod.to_sigma {α β} (x : α × β) : Σ a : α, β := ⟨x.1, x.2⟩
@@ -253,6 +257,9 @@ mem_lookup_iff.2 $ or.inr $ mem_lookup_iff.1 H
 theorem lookup_cons_self {α β} [decidable_eq α] {s a b h} :
   b ∈ lookup a (@cons α β s a b h) :=
 mem_lookup_iff.2 $ or.inl rfl
+
+@[simp] theorem cons_keys {α} {β : α → Type*} (s : alist α β)
+  (a : α) (b : β a) (h : a ∉ s) : (alist.cons s a b h).keys = a :: s.keys := rfl
 
 def forall₂ {α} {β γ : α → Type*} (R : ∀ a, β a → γ a → Prop)
   (l₁ : alist α β) (l₂ : alist α γ) : Prop :=
@@ -336,6 +343,18 @@ end
 | ⟨l, nd⟩ a b h := rfl
 
 end alist
+
+namespace finset
+
+theorem inter_subset_inter {α} [decidable_eq α] {s₁ s₂ t₁ t₂ : finset α}
+  (h₁ : s₁ ⊆ t₁) (h₂ : s₂ ⊆ t₂) : s₁ ∩ s₂ ⊆ t₁ ∩ t₂ :=
+λ x h, let ⟨l, r⟩ := finset.mem_inter.1 h in finset.mem_inter.2 ⟨h₁ l, h₂ r⟩
+
+theorem singleton_subset {α} {a : α} {s : finset α} :
+  singleton a ⊆ s ↔ a ∈ s :=
+by simp [subset_def]; refl
+
+end finset
 
 namespace finmap
 open list

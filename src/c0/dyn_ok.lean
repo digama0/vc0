@@ -37,10 +37,6 @@ inductive lookup (i : ident) (τ : vtype) : list ident → vtype → Prop
 | cons {x τ xs τs} : lookup xs τs →
   lookup (x :: xs) (vtype.cons τ τs)
 
--- inductive field (Γ : ast) (s : ident) (f : ident) : vtype → vtype → Prop
--- | mk {sd sτ τ} : Γ.get_sdef s sd →
---   lookup f τ (prod.fst <$> sd) sτ → field sτ τ
-
 end vtype
 
 def heap_ty := list vtype
@@ -96,15 +92,27 @@ def exp.ok_vtype (Γ : ast) (Δ : ctx) (e : exp) (vτ : vtype) : Prop :=
 def stmt.ok_vtype (Γ : ast) (ret : vtype) (Δ : ctx) (s : stmt) : Prop :=
 ∃ τ, vtype.of_ty (rego τ) ret ∧ stmt.ok Γ τ Δ s
 
-inductive stmt_list.ok (Γ : ast) (ret : option type) : ctx → list stmt → Prop
-| nil {} {Δ} : ret = none → stmt_list.ok Δ []
-| one {} {Δ s K} : stmt.ok Γ ret Δ s → s.returns → stmt_list.ok Δ (s::K)
-| cons {} {Δ s K} :
-  stmt.ok Γ ret Δ s → stmt_list.ok Δ K → stmt_list.ok Δ (s::K)
-| weak {} {Δ x τ h K} : stmt_list.ok Δ K → stmt_list.ok (Δ.cons x τ h) K
+inductive stmt_list.ok (Γ : ast) (ret : option type) : ctx → finset ident → list stmt → Prop
+| nil {} {Δ δ} : ret = none → stmt_list.ok Δ δ []
+| one {} {Δ δ δ' s K} :
+  stmt.ok Γ ret Δ s →
+  s.returns →
+  s.init Δ.keys.to_finset δ δ' →
+  stmt_list.ok Δ δ (s::K)
+| cons {} {Δ δ δ' s K} :
+  stmt.ok Γ ret Δ s →
+  s.init Δ.keys.to_finset δ δ' →
+  stmt_list.ok Δ δ' K →
+  stmt_list.ok Δ δ (s::K)
+| weak {} {Δ δ x τ h K} :
+  stmt_list.ok Δ (finset.erase δ x) K → stmt_list.ok (Δ.cons x τ h) δ K
 
-def stmt_list.ok_vtype (Γ : ast) (ret : vtype) (Δ : ctx) (K : list stmt) : Prop :=
-∃ τ, vtype.of_ty (rego τ) ret ∧ stmt_list.ok Γ τ Δ K
+def stmt_list.ok' (Γ : ast) (σ : vars_ty) (ret : option type) (Δ : ctx) (K : list stmt) : Prop :=
+stmt_list.ok Γ ret Δ σ.keys K
+
+def stmt_list.ok_vtype (Γ : ast) (σ : vars_ty) (ret : vtype)
+  (Δ : ctx) (K : list stmt) : Prop :=
+∃ τ, vtype.of_ty (rego τ) ret ∧ stmt_list.ok' Γ σ τ Δ K
 
 namespace addr
 inductive ok (Γ : ast) (E : heap_ty) (σ : vars_ty) : addr → vtype → Prop
@@ -131,35 +139,35 @@ def cont_ty.ok (Γ : ast) (E : heap_ty) (σ : vars_ty) :
 
 inductive cont.ok (Γ : ast) (E : heap_ty) (σ : vars_ty)
   (Δ : ctx) (ret : vtype) : ∀ {α}, cont α → vtype → Prop
-| If {} {s₁ s₂ K τ} :
+| If {} {s₁ s₂ δ₁ δ₂ K τ} :
   vtype.of_ty (rego τ) ret →
-  stmt.ok Γ τ Δ s₁ →
-  stmt.ok Γ τ Δ s₂ →
-  s₁.returns ∧ s₂.returns ∨ stmt_list.ok Γ τ Δ K →
+  stmt.ok Γ τ Δ s₁ → s₁.init Δ.keys.to_finset σ.keys δ₁ →
+  stmt.ok Γ τ Δ s₂ → s₂.init Δ.keys.to_finset σ.keys δ₂ →
+  s₁.returns ∧ s₂.returns ∨ stmt_list.ok Γ τ Δ (δ₁ ∩ δ₂) K →
   cont.ok (cont.If s₁ s₂ K) vtype.bool
 
 | asgn₁ {e τ K} :
   exp.ok_vtype Γ Δ e τ →
-  stmt_list.ok_vtype Γ ret Δ K →
+  stmt_list.ok_vtype Γ σ ret Δ K →
   cont.ok (cont.asgn₁ e K) τ
 | asgn₂ {a τ K} :
   addr_opt.ok Γ E σ a τ →
-  stmt_list.ok_vtype Γ ret Δ K →
+  stmt_list.ok_vtype Γ σ ret Δ K →
   cont.ok (cont.asgn₂ a K) τ
 
 | asnop {op e τ vτ K} :
   binop.ok_asnop op τ →
   vtype.of_ty (reg τ) vτ →
   exp.ok Γ Δ e (reg τ) →
-  stmt_list.ok_vtype Γ ret Δ K →
+  stmt_list.ok_vtype Γ σ ret Δ K →
   cont.ok (cont.asnop op e K) vτ
 
 | eval {τ K} :
-  stmt_list.ok_vtype Γ ret Δ K →
+  stmt_list.ok_vtype Γ σ ret Δ K →
   cont.ok (cont.eval K) τ
 
 | assert {K} :
-  stmt_list.ok_vtype Γ ret Δ K →
+  stmt_list.ok_vtype Γ σ ret Δ K →
   cont.ok (cont.assert K) vtype.bool
 
 | ret {} : cont.ok cont.ret ret
@@ -260,14 +268,16 @@ inductive env.ok (Γ : ast) : env_ty → env → vtype → Prop
   env.ok ⟨E, σs, σ, Δ⟩ ⟨H, S, η⟩ τ
 
 inductive state.ok (Γ : ast) : state → Prop
-| stmt {T C vτ s ss} (τ) :
-  env.ok Γ T C vτ →
+| stmt {E σs σ Δ C vτ δ s ss} (τ) :
+  env.ok Γ ⟨E, σs, σ, Δ⟩ C vτ →
   vtype.of_ty (rego τ) vτ →
-  stmt.ok Γ τ T.ctx s →
-  s.returns ∨ stmt_list.ok Γ τ T.ctx ss →
+  stmt.ok Γ τ Δ s →
+  stmt.init Δ.keys.to_finset σ.keys s δ →
+  s.returns ∨ stmt_list.ok Γ τ Δ δ ss →
   state.ok (state.stmt C s ss)
 | exp {E σs σ H η S Δ ret τ e α K} :
   env.ok Γ ⟨E, σs, σ, Δ⟩ ⟨H, S, η⟩ ret →
+  exp.use e ⊆ σ.keys →
   exp.ok_vtype Γ Δ e τ →
   cont.ok Γ E σ Δ ret K τ →
   state.ok (state.exp α ⟨H, S, η⟩ e K)

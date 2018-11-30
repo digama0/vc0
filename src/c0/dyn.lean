@@ -177,6 +177,7 @@ structure env :=
 (heap : heap)
 (stack : list (vars × cont V))
 (vars : vars)
+attribute [pp_using_anonymous_constructor] env
 
 instance env.empty : has_emptyc env := ⟨⟨∅, [], ∅⟩⟩
 

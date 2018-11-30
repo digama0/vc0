@@ -232,6 +232,10 @@ def insert_lv : lval → finset ident → finset ident
 | (lval.var v) δ := insert v δ
 | _ δ := δ
 
+def lv_use : lval → finset ident
+| (lval.var v) := ∅
+| lv := (lval.to_exp lv).use
+
 inductive init : finset ident → finset ident → stmt → finset ident → Prop
 | decl {v τ s γ δ δ'} :
   init (insert v γ) δ s δ' →
@@ -247,7 +251,7 @@ inductive init : finset ident → finset ident → stmt → finset ident → Pro
   exp.use c ⊆ δ → init γ δ s δ' →
   init γ δ (while c s) δ
 | asgn {lv e γ δ} :
-  (lval.to_exp lv).use ⊆ δ → exp.use e ⊆ δ →
+  lv_use lv ⊆ δ → exp.use e ⊆ δ →
   init γ δ (asgn lv e) (insert_lv lv δ)
 | asnop {lv op e γ δ} :
   (lval.to_exp lv).use ⊆ δ → exp.use e ⊆ δ →
