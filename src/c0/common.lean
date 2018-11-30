@@ -20,8 +20,6 @@ structure fdef :=
 (params : list type)
 (ret : option type)
 
-@[reducible] def sdef := list (ident × type)
-
 inductive binop
 | add  -- @x y : int |- x + y : int@
 | sub  -- @x y : int |- x - y : int@

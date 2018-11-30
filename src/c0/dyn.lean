@@ -91,10 +91,10 @@ inductive default (Γ : ast) : type ⊕ sdef → value → Prop
 | arr {τ} : default (inl $ type.arr τ) (ref none)
 | struct {s sd v} : Γ.get_sdef s sd → default (inr sd) v →
   default (inl $ type.struct s) v
-| nil : default (inr []) nil
-| cons {x τ xτs v vs} :
-  default (inl τ) v → default (inr xτs) vs →
-  default (inr ((x, τ) :: xτs)) (cons (named x v) vs)
+| nil : default (inr ∅) nil
+| cons {Δ x τ h v vs} :
+  default (inl τ) v → default (inr Δ) vs →
+  default (inr (Δ.cons x τ h)) (cons (named x v) vs)
 
 def repeat (v : value) : ℕ → value
 | 0 := nil
@@ -104,24 +104,15 @@ end value
 
 @[reducible] def heap := list value
 
-@[reducible] def vars := list (ident × value)
+@[reducible] def vars := finmap ident (λ _, value)
 
 instance heap.empty : has_emptyc heap := ⟨[]⟩
-instance vars.empty : has_emptyc vars := ⟨[]⟩
-
-namespace vars
-
-inductive update (R : value → value → Prop) (i : ident) : vars → vars → Prop
-| one {v v' vs} : R v v' → update ((i, v) :: vs) ((i, v') :: vs)
-| cons {v vs vs'} : update vs vs' → update (v :: vs) (v :: vs')
-
-end vars
 
 namespace addr
 
 inductive get (h : heap) (η : vars) : addr → value → Prop
 | ref {} {n v} : v ∈ h.nth n → get (ref n) v
-| var {} {i v} : (i, v) ∈ η → get (var i) v
+| var {} {i v} : v ∈ η.lookup i → get (var i) v
 | head {a v vs} : get a (value.cons v vs) → get (head a) v
 | tail {a v vs} : get a (value.cons v vs) → get (tail a) vs
 | nth {a i n v v'} : get a (value.arr n v) →
@@ -134,9 +125,9 @@ inductive get_len (h : heap) (η : vars) : addr → ℕ → Prop
 
 inductive update (h : heap) (η : vars) :
   (value → value → Prop) → addr → heap → vars → Prop
-| ref {R : value → value → Prop} {n h'} :
-  list.update_at R n h h' → update R (ref n) h' η
-| var {R i η'} : vars.update R i η η' → update R (var i) h η'
+| ref {R n h'} : list.update_at R n h h' → update R (ref n) h' η
+| var {R : value → value → Prop} {i x y} :
+  x ∈ η.lookup i → R x y → update R (var i) h (η.replace i y)
 | head {R a h' η'} :
   update (value.at_head R) a h' η' → update R (head a) h' η'
 | tail {R a h' η'} :
@@ -148,8 +139,7 @@ inductive assign (h : heap) (η : vars) (v : value) :
   addr → heap → vars → Prop
 | update {a h' η'} :
   addr.update h η (λ _, eq v) a h' η' → assign a h' η'
-| insert {x} : x ∉ (η : vars).map prod.fst →
-  assign (addr.var x) h ((x, v) :: η)
+| insert {x} : x ∉ η → assign (addr.var x) h (η.insert x v)
 
 end addr
 
@@ -200,7 +190,7 @@ inductive state
 open ast.stmt ast.exp.type c0.type
 
 inductive start (Γ : ast) : state → Prop
-| mk {s} : Γ.get_body main (some int) [] s →
+| mk {s} : Γ.get_body main (some int) ∅ s →
   start (state.stmt ∅ s [])
 
 inductive state.final : state → Prop
@@ -212,11 +202,10 @@ inductive step_ret : env → value → state → Prop
   step_ret ⟨H, (η, K) :: S, η'⟩ v (state.ret V ⟨H, S, η⟩ v K)
 | done {H η n} : step_ret ⟨H, [], η⟩ (value.int n) (state.done n)
 
-inductive step_call (η₀ : vars) : value → vars → Prop
-| nil : step_call value.nil η₀
+inductive step_call : value → vars → Prop
+| nil : step_call value.nil ∅
 | cons {x v vs η} :
-  step_call vs ((x, v) :: η) →
-  step_call (value.cons v vs) η
+  step_call vs η → step_call (value.cons v vs) (η.insert x v)
 
 inductive step_deref : env → option addr → cont V → state → Prop
 | null {C K} : step_deref C none K (state.err err.mem)
@@ -314,7 +303,7 @@ inductive step (Γ : ast) : state → io → state → Prop
   step (state.exp V C exp.null K) none
        (state.ret V C (value.ref none) K)
 
-| var {C:env} {i v K} : (i, v) ∈ C.vars →
+| var {C:env} {i v K} : v ∈ C.vars.lookup i →
   step (state.exp V C (exp.var i) K) none
        (state.ret V C v K)
 
@@ -367,7 +356,7 @@ inductive step (Γ : ast) : state → io → state → Prop
        (state.exp V C es $ cont.call f K)
 | call₂ {H S η η' f τ xτs s vs K} :
   Γ.get_body f τ xτs s →
-  step_call η' vs [] →
+  step_call vs η' →
   step (state.ret V ⟨H, S, η⟩ vs $ cont.call f K) none
        (state.stmt ⟨H, (η, K) :: S, η'⟩ s [])
 | call_extern {H S η f vs H' v K} :

@@ -37,24 +37,19 @@ inductive lookup (i : ident) (τ : vtype) : list ident → vtype → Prop
 | cons {x τ xs τs} : lookup xs τs →
   lookup (x :: xs) (vtype.cons τ τs)
 
-inductive field (Γ : ast) (s : ident) (f : ident) : vtype → vtype → Prop
-| mk {sd sτ τ} : Γ.get_sdef s sd →
-  lookup f τ (prod.fst <$> sd) sτ → field sτ τ
+-- inductive field (Γ : ast) (s : ident) (f : ident) : vtype → vtype → Prop
+-- | mk {sd sτ τ} : Γ.get_sdef s sd →
+--   lookup f τ (prod.fst <$> sd) sτ → field sτ τ
 
 end vtype
 
 def heap_ty := list vtype
+@[reducible] def vars_ty := finmap ident (λ _, vtype)
 
-structure vars_ty :=
-(σ : list (ident × vtype))
-(nd : (list.map prod.fst σ).nodup)
+def vars_ty.ok (Δ : ctx) (σ : vars_ty) : Prop :=
+∀ i τ, τ ∈ σ.lookup i → ∃ t ∈ Δ.lookup i, vtype.of_ty (ast.exp.type.reg t) τ
 
 instance heap_ty.empty : has_emptyc heap_ty := ⟨[]⟩
-instance vars_ty.empty : has_emptyc vars_ty := ⟨⟨[], list.nodup_nil⟩⟩
-
-def vars_ty.cons (σ : vars_ty) (x : ident) (τ : vtype)
-  (h : x ∉ list.map prod.fst σ.1) : vars_ty :=
-⟨(x, τ) :: σ.1, list.nodup_cons.2 ⟨h, σ.2⟩⟩
 
 instance : partial_order heap_ty :=
 { le := (<:+),
@@ -76,7 +71,7 @@ inductive ok (Γ : ast) (E : heap_ty) : value → vtype → Prop
 | arr {v τ n} : ok v (vtype.arr' τ n) → ok (arr n v) (vtype.arr τ)
 | struct {v s} : (∀ sd x τ vτ v',
     Γ.get_sdef s sd →
-    (x, τ) ∈ sd →
+    τ ∈ sd.lookup x →
     vtype.of_ty (ast.exp.type.reg τ) vτ →
     is_field x v v' → ok v' vτ) →
   ok v (vtype.struct s)
@@ -90,8 +85,8 @@ end value
 def heap.ok (Γ : ast) (h : heap) (E : heap_ty) : Prop :=
 list.forall₂ (value.ok Γ E) h E
 
-def vars.ok (Γ : ast) (H : list vtype) (vs : vars) (σ : vars_ty) : Prop :=
-list.forall₂ (prod.forall₂ eq (value.ok Γ H)) vs σ.1
+def vars.ok (Γ : ast) (E : heap_ty) (η : vars) (σ : vars_ty) : Prop :=
+∀ i τ, τ ∈ σ.lookup i → ∃ v ∈ η.lookup i, value.ok Γ E v τ
 
 open ast ast.stmt ast.exp ast.exp.type c0.type cont_ty
 
@@ -106,7 +101,7 @@ inductive stmt_list.ok (Γ : ast) (ret : option type) : ctx → list stmt → Pr
 | one {} {Δ s K} : stmt.ok Γ ret Δ s → s.returns → stmt_list.ok Δ (s::K)
 | cons {} {Δ s K} :
   stmt.ok Γ ret Δ s → stmt_list.ok Δ K → stmt_list.ok Δ (s::K)
-| weak {} {Δ xτ K} : stmt_list.ok Δ K → stmt_list.ok (xτ::Δ) K
+| weak {} {Δ x τ h K} : stmt_list.ok Δ K → stmt_list.ok (Δ.cons x τ h) K
 
 def stmt_list.ok_vtype (Γ : ast) (ret : vtype) (Δ : ctx) (K : list stmt) : Prop :=
 ∃ τ, vtype.of_ty (rego τ) ret ∧ stmt_list.ok Γ τ Δ K
@@ -114,12 +109,12 @@ def stmt_list.ok_vtype (Γ : ast) (ret : vtype) (Δ : ctx) (K : list stmt) : Pro
 namespace addr
 inductive ok (Γ : ast) (E : heap_ty) (σ : vars_ty) : addr → vtype → Prop
 | ref {} {n τ} : τ ∈ E.nth n → ok (ref n) τ
-| var {} {i τ} : (i, τ) ∈ σ.1 → ok (var i) τ
+| var {} {i τ} : τ ∈ σ.lookup i → ok (var i) τ
 | head {a τ τs} : ok a (vtype.cons τ τs) → ok (head a) τ
 | tail {a τ τs} : ok a (vtype.cons τ τs) → ok (tail a) τs
 | nth {a i v} : ok a (vtype.arr v) → ok (nth a i) v
 | field {a s f τ sd vτ} :
-  Γ.get_sdef s sd → (f, τ) ∈ sd →
+  Γ.get_sdef s sd → τ ∈ sd.lookup f →
   vtype.of_ty (ast.exp.type.reg τ) vτ →
   ok a (vtype.struct s) → ok (field a f) vτ
 end addr
@@ -172,10 +167,10 @@ inductive cont.ok (Γ : ast) (E : heap_ty) (σ : vars_ty)
 | addr_deref {τ K} :
   cont.ok K τ → cont.ok (cont.addr_deref K) (vtype.ref τ)
 
-| addr_field {s f sτ τ K} :
-  vtype.field Γ s f sτ τ →
-  vtype.of_ty (reg $ type.struct s) sτ →
-  cont.ok K sτ →
+| addr_field {s f sd t τ K} :
+  Γ.get_sdef s sd → t ∈ sd.lookup f →
+  vtype.of_ty (reg t) τ →
+  cont.ok K (vtype.struct s) →
   cont.ok (cont.addr_field f K) τ
 
 | addr_index₁ {e₂ τ K} :
@@ -250,7 +245,7 @@ inductive stack.ok (Γ : ast) (E : heap_ty) :
   list (ctx × vars_ty) → list (vars × cont V) → vtype → Prop
 | nil {} : stack.ok [] [] vtype.int
 | cons {Δ η K S σ σs τ τ'} :
-  ctx.ok Δ →
+  vars_ty.ok Δ σ →
   vars.ok Γ E η σ →
   cont.ok Γ E σ Δ τ K τ' →
   stack.ok σs S τ →
@@ -258,7 +253,7 @@ inductive stack.ok (Γ : ast) (E : heap_ty) :
 
 inductive env.ok (Γ : ast) : env_ty → env → vtype → Prop
 | mk {E σs σ H η S Δ τ} :
-  ctx.ok Δ →
+  vars_ty.ok Δ σ →
   heap.ok Γ H E →
   vars.ok Γ E η σ →
   stack.ok Γ E σs S τ →

@@ -44,9 +44,9 @@ inductive ok : unop → type → type → Prop
 
 end unop
 
-@[reducible] def ctx := list (ident × c0.type)
+@[reducible] def sdef := alist ident (λ _, c0.type)
 
-def ctx.ok (Δ : ctx) : Prop := (list.map prod.fst Δ).nodup
+@[reducible] def ctx := alist ident (λ _, c0.type)
 
 namespace ast
 
@@ -70,11 +70,11 @@ inductive get_fdef : ast → ident → fdef → Prop
   get_fdef Γ f ⟨τs', τ'⟩
 
 inductive get_body : ast → ident → option c0.type → ctx → stmt → Prop
-| mk {h f xτs xτs' τ τ' body Γ} :
+| mk {h f xτs Δ τ τ' nd body Γ} :
   gdecl.fdecl h f xτs τ (some body) ∈ Γ →
-  list.forall₂ (prod.forall₂ eq (eval_ty Γ)) xτs xτs' →
+  alist.forall₂ (λ _, eval_ty Γ) (alist.mk' xτs nd) Δ →
   option.forall₂ (eval_ty Γ) τ τ' →
-  get_body Γ f τ' xτs' body
+  get_body Γ f τ' Δ body
 
 def is_fdef (Γ : ast) (f : ident) : Prop := ∃ τ xτs s, get_body Γ f τ xτs s
 
@@ -84,10 +84,10 @@ inductive is_extern : ast → ident → Prop
   is_extern Γ f
 
 inductive get_sdef : ast → ident → sdef → Prop
-| mk {s xτs xτs' Γ} :
+| mk {s xτs nd Δ Γ} :
   gdecl.sdecl s (some xτs) ∈ Γ →
-  list.forall₂ (prod.forall₂ eq (eval_ty Γ)) xτs xτs' →
-  get_sdef Γ s xτs'
+  alist.forall₂ (λ _, eval_ty Γ) (alist.mk' xτs nd) Δ →
+  get_sdef Γ s Δ
 
 def sized (Γ : ast) : c0.type → Prop
 | (c0.type.struct s) := ∃ sd, get_sdef Γ s sd
@@ -120,7 +120,7 @@ inductive ok (Γ : ast) (Δ : ctx) : exp → type → Prop
 | int {} {n} : ok (int n) (reg c0.type.int)
 | bool {} {b} : ok (bool b) (reg c0.type.bool)
 | null {} {τ} : ok null (reg (ref τ))
-| var {v τ} : (v, τ) ∈ Δ → ok (var v) (reg τ)
+| var {v τ} : τ ∈ Δ.lookup v → ok (var v) (reg τ)
 | binop {op e₁ e₂ τ₁ τ₂} :
   ok e₁ (reg τ₁) → ok e₂ (reg τ₁) →
   binop.ok op τ₁ τ₂ → ok (binop op e₁ e₂) (reg τ₂)
@@ -137,7 +137,7 @@ inductive ok (Γ : ast) (Δ : ctx) : exp → type → Prop
   ok es (ls τs) → ok (call f es) (rego τ)
 | field {s sd f e τ} :
   ok e (reg (struct s)) →
-  get_sdef Γ s sd → (f, τ) ∈ sd →
+  get_sdef Γ s sd → τ ∈ sd.lookup f →
   ok (field e f) (reg τ)
 | deref {e τ} : ok e (reg (ref τ)) → typeable e → ok (deref e) (reg τ)
 | index {e₁ e₂ τ} :
@@ -188,13 +188,13 @@ namespace stmt
 open c0.type exp.type
 
 inductive ok (Γ : ast) (ret_τ : option c0.type) : ctx → stmt → Prop
-| decl {Δ v τ τ' s} :
-  (∀ τ, (v, τ) ∉ Δ) → eval_ty Γ τ τ' → τ'.small →
-  ok ((v, τ') :: Δ) s → ok Δ (decl v τ s)
-| decl_asgn {Δ v e τ τ' s} :
-  (∀ τ, (v, τ) ∉ Δ) → eval_ty Γ τ τ' → τ'.small →
+| decl {Δ v τ τ' s} (h) :
+  eval_ty Γ τ τ' → τ'.small →
+  ok (alist.cons Δ v τ' h) s → ok Δ (decl v τ s)
+| decl_asgn {Δ v e τ τ' s} (h) :
+  eval_ty Γ τ τ' → τ'.small →
   exp.ok Γ Δ e (reg τ') →
-  ok ((v, τ') :: Δ) s → ok Δ (decl_asgn v τ e s)
+  ok (alist.cons Δ v τ' h) s → ok Δ (decl_asgn v τ e s)
 | If {Δ c s₁ s₂} : exp.ok Γ Δ c (reg bool) →
   ok Δ s₁ → ok Δ s₂ → ok Δ (If c s₁ s₂)
 | while {Δ c s} : exp.ok Γ Δ c (reg bool) →
@@ -268,21 +268,20 @@ inductive returns : stmt → Prop
 | seq_right {s₁ s₂} : returns s₂ → returns (seq s₁ s₂)
 
 def ok_init (Δ : ctx) (s : stmt) : Prop :=
-let γ := (Δ.map prod.fst).to_finset in ∃ δ', init γ γ s δ'
+let γ := Δ.keys.to_finset in ∃ δ', init γ γ s δ'
 
 end stmt
 namespace gdecl
 
 inductive ok (Γ : ast) : gdecl → Prop
-| fdecl (header f xτs xτs' ret ret' body) :
+| fdecl (header f xτs Δ ret ret' body h) :
+  alist.forall₂ (λ i τ τ', eval_ty Γ τ τ' ∧ τ'.small) (alist.mk' xτs h) Δ →
   option.forall₂ (eval_ty Γ) ret ret' →
-  (list.map prod.fst xτs).nodup →
-  list.forall₂ (prod.forall₂ eq (λ τ τ', eval_ty Γ τ τ' ∧ τ'.small)) xτs xτs' →
   (∀ s ∈ body,
     header = ff ∧
     ¬ is_fdef Γ f ∧
-    stmt.ok (fdecl header f xτs ret body :: Γ) ret' xτs' s ∧
-    s.returns ∧ s.ok_init xτs') →
+    stmt.ok (fdecl header f xτs ret body :: Γ) ret' Δ s ∧
+    s.returns ∧ s.ok_init Δ) →
   ok (fdecl header f xτs ret body)
 | typedef (x τ τ') :
   (∀ τ, typedef x τ ∉ Γ) →
