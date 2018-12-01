@@ -183,6 +183,16 @@ def use_func : exp → finset ident
 | (alloc_arr _ e) := use_func e
 
 end exp
+namespace lval
+
+def is_var : lval → option ident
+| (lval.var v) := some v
+| _ := none
+
+def use (lv : lval) : finset ident :=
+cond (is_var lv).is_some ∅ lv.to_exp.use
+
+end lval
 
 namespace stmt
 open c0.type exp.type
@@ -228,14 +238,6 @@ def use_func : stmt → finset ident
 | nop := ∅
 | (seq s₁ s₂) := use_func s₁ ∪ use_func s₂
 
-def insert_lv : lval → finset ident → finset ident
-| (lval.var v) δ := insert v δ
-| _ δ := δ
-
-def lv_use : lval → finset ident
-| (lval.var v) := ∅
-| lv := (lval.to_exp lv).use
-
 inductive init : finset ident → finset ident → stmt → finset ident → Prop
 | decl {v τ s γ δ δ'} :
   init (insert v γ) δ s δ' →
@@ -251,8 +253,8 @@ inductive init : finset ident → finset ident → stmt → finset ident → Pro
   exp.use c ⊆ δ → init γ δ s δ' →
   init γ δ (while c s) δ
 | asgn {lv e γ δ} :
-  lv_use lv ⊆ δ → exp.use e ⊆ δ →
-  init γ δ (asgn lv e) (insert_lv lv δ)
+  lval.use lv ⊆ δ → exp.use e ⊆ δ →
+  init γ δ (asgn lv e) (option.cases_on lv.is_var δ (λ v, insert v δ))
 | asnop {lv op e γ δ} :
   (lval.to_exp lv).use ⊆ δ → exp.use e ⊆ δ →
   init γ δ (asnop lv op e) δ

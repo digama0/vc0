@@ -135,13 +135,10 @@ inductive update (h : heap) (η : vars) :
 | nth {R a i h' η'} :
   update (value.at_nth R i) a h' η' → update R (nth a i) h' η'
 
-inductive assign (h : heap) (η : vars) (v : value) :
-  addr → heap → vars → Prop
-| update {a h' η'} :
-  addr.update h η (λ _, eq v) a h' η' → assign a h' η'
-| insert {x} : x ∉ η → assign (addr.var x) h (η.insert x v)
-
 end addr
+
+def vars.assign (η : vars) (x : ident) (v : value) : vars :=
+if x ∈ η then η.replace x v else η.insert x v
 
 open ast
 
@@ -155,6 +152,7 @@ inductive cont : cont_ty → Type
 | If : stmt → stmt → list stmt → cont V        -- If _ s₁ s₂ : K
 | asgn₁ : exp → list stmt → cont A             -- asgn _ e : K
 | asgn₂ : option addr → list stmt → cont V     -- asgn a _ : K
+| asgn_var : ident → list stmt → cont V        -- asgn x _ : K
 | asnop : binop → exp → list stmt → cont A     -- asnop _ op e : K
 | eval : list stmt → cont V                    -- eval _ : K
 | assert : list stmt → cont V                  -- assert _ : K
@@ -244,18 +242,27 @@ inductive step (Γ : ast) : state → io → state → Prop
        (state.exp V C c $ cont.If (seq s (while c s)) nop K)
 
 | asgn₁ {C lv e K} :
+  lval.is_var lv = none →
   step (state.stmt C (asgn lv e) K) none
        (state.exp A C lv.to_exp $ cont.asgn₁ e K)
 | asgn₂ {C a e K} :
   step (state.ret A C a $ cont.asgn₁ e K) none
        (state.exp V C e $ cont.asgn₂ a K)
 | asgn₃ {H H' S η η' a v K} :
-  addr.assign H η v a H' η' →
+  addr.update H η (λ _, eq v) a H' η' →
   step (state.ret V ⟨H, S, η⟩ v $ cont.asgn₂ (some a) K) none
        (state.stmt ⟨H', S, η'⟩ nop K)
 | asgn_err {H S η v K} :
   step (state.ret V ⟨H, S, η⟩ v $ cont.asgn₂ none K) none
        (state.err err.mem)
+
+| asgn_var₁ {C lv x e K} :
+  x ∈ lval.is_var lv →
+  step (state.stmt C (asgn lv e) K) none
+       (state.exp V C e $ cont.asgn_var x K)
+| asgn_var₂ {H S η x v K} :
+  step (state.ret V ⟨H, S, η⟩ v $ cont.asgn_var x K) none
+       (state.stmt ⟨H, S, η.assign x v⟩ nop K)
 
 | asnop₁ {C lv op e K} :
   step (state.stmt C (asnop lv op e) K) none
