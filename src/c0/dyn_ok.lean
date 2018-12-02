@@ -148,10 +148,9 @@ inductive cont.ok (Γ : ast) (E : heap_ty) (σ : vars_ty)
   exp.use e ⊆ δ →
   stmt_list.ok_vtype Γ ret Δ δ K →
   cont.ok δ (cont.asgn₁ e K) τ
-| asgn₂ {δ a τ t K} :
+| asgn₂ {δ a τ K} :
   addr_opt.ok Γ E σ a τ →
-  vtype.of_ty (rego t) ret →
-  stmt_list.ok Γ t Δ δ K →
+  stmt_list.ok_vtype Γ ret Δ δ K →
   cont.ok δ (cont.asgn₂ a K) τ
 
 | asgn_var {} {δ x τ vτ K} :
@@ -160,7 +159,7 @@ inductive cont.ok (Γ : ast) (E : heap_ty) (σ : vars_ty)
   stmt_list.ok_vtype Γ ret Δ (insert x δ) K →
   cont.ok δ (cont.asgn_var x K) vτ
 
-| asnop {δ op e τ vτ K} :
+| asnop {} {δ op e τ vτ K} :
   binop.ok_asnop op τ →
   vtype.of_ty (reg τ) vτ →
   exp.ok Γ Δ e (reg τ) →
@@ -279,21 +278,6 @@ inductive env.ok (Γ : ast) : env_ty → env → vtype → Prop
   vars.ok Γ E η σ →
   stack.ok Γ E σs S τ →
   env.ok ⟨E, σs, σ, Δ⟩ ⟨H, S, η⟩ τ
-
--- This is an extra weird state that we have to patch in.
--- It doesn't quite fit the pattern of a regular exp state
--- because `K'` is typechecked in conjunction with the active
--- expression element, in this case a variable.
-inductive state.addr_var_ok (Γ : ast) : env → ident → exp → list stmt → Prop
-| addr_var₂ {E σs σ Δ ret_τ t τ ret H S η x e K} :
-  env.ok Γ ⟨E, σs, σ, Δ⟩ ⟨H, S, η⟩ ret →
-  vtype.of_ty (rego ret_τ) ret →
-  t ∈ Δ.lookup x →
-  exp.ok Γ Δ e (reg t) →
-  vtype.of_ty (reg t) τ →
-  exp.use e ⊆ σ.keys →
-  stmt_list.ok Γ ret_τ Δ (insert x σ.keys) K →
-  state.addr_var_ok ⟨H, S, η⟩ x e K
 
 inductive state.ok (Γ : ast) : state → Prop
 | stmt {E σs σ Δ C vτ δ s K} (τ) :
