@@ -215,7 +215,7 @@ inductive step_deref : env → option addr → cont V → state → Prop
 inductive step_alloc : env → value → cont V → state → Prop
 | mk {H S η v K} :
   step_alloc ⟨H, S, η⟩ v K
-    (state.ret V ⟨H ++ [v], S, η⟩ (value.ref H.length) K)
+    (state.ret V ⟨H ++ [v], S, η⟩ (value.ref $ some H.length) K)
 
 def io := option ((ident × heap × value) × (heap × value))
 
@@ -343,7 +343,7 @@ inductive step (Γ : ast) : state → io → state → Prop
        (state.exp V C c $ cont.cond e₁ e₂ K)
 | cond₂ {C b e₁ e₂ K} :
   step (state.ret V C (value.bool b) $ cont.cond e₁ e₂ K) none
-       (state.exp V C (if b then e₁ else e₂) K)
+       (state.exp V C (cond b e₁ e₂) K)
 
 | nil {C K} :
   step (state.exp V C exp.nil K) none

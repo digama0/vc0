@@ -115,6 +115,28 @@ lemma forall₂.nth {α β} {R : α → β → Prop} :
 | (a::l₁) (b::l₂) (forall₂.cons hr hrs) _  _  0     rfl rfl := hr
 | (a::l₁) (b::l₂) (forall₂.cons hr hrs) a' b' (n+1) h₁  h₂  := forall₂.nth hrs h₁ h₂
 
+lemma forall₂_reverse {α β} {R : α → β → Prop} :
+  ∀ {l₁ l₂}, forall₂ R (reverse l₁) (reverse l₂) ↔ forall₂ R l₁ l₂ :=
+suffices ∀ {l₁ l₂}, forall₂ R l₁ l₂ → forall₂ R (reverse l₁) (reverse l₂),
+from λ l₁ l₂, ⟨λ h, by simpa using this h, this⟩,
+suffices ∀ {l₁ l₂ r₁ r₂}, forall₂ R l₁ l₂ → forall₂ R r₁ r₂ →
+  forall₂ R (reverse_core l₁ r₁) (reverse_core l₂ r₂),
+from λ l₁ l₂ h, this h forall₂.nil,
+λ l₁, begin
+  induction l₁ with a l₁ IH; introv h₁ h₂;
+    cases h₁ with _ b _ l₂ r h₁',
+  exacts [h₂, IH h₁' (forall₂.cons r h₂)]
+end
+
+lemma forall₂_concat {α β} {R : α → β → Prop}
+  {a b l₁ l₂} : forall₂ R (l₁ ++ [a]) (l₂ ++ [b]) ↔ forall₂ R l₁ l₂ ∧ R a b :=
+by rw ← forall₂_reverse; simp [forall₂_reverse, and_comm]
+
+theorem nth_concat_length {α} : ∀ (l : list α) (a : α),
+  a ∈ list.nth (l ++ [a]) (length l)
+| []       _ := rfl
+| (b :: l) a := nth_concat_length l a
+
 lemma map_prod_fst_eq_of_forall₂_eq {α β γ} {R : β → γ → Prop} {l₁ l₂}
   (h : forall₂ (prod.forall₂ (@eq α) R) l₁ l₂) :
   l₁.map prod.fst = l₂.map prod.fst :=

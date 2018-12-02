@@ -32,11 +32,6 @@ inductive of_ty : ast.exp.type → vtype → Prop
   of_ty (reg τ) vτ → of_ty (ls τs) vτs →
   of_ty (ls (τ :: τs)) (cons vτ vτs)
 
-inductive lookup (i : ident) (τ : vtype) : list ident → vtype → Prop
-| one {xs τs} : lookup (i :: xs) (vtype.cons τ τs)
-| cons {x τ xs τs} : lookup xs τs →
-  lookup (x :: xs) (vtype.cons τ τs)
-
 end vtype
 
 def heap_ty := list vtype
@@ -47,14 +42,21 @@ def vars_ty.ok (Δ : ctx) (σ : vars_ty) : Prop :=
 
 instance heap_ty.empty : has_emptyc heap_ty := ⟨[]⟩
 
+def heap_ty.add (E : heap_ty) (τ : vtype) : heap_ty := (E ++ [τ] : list vtype)
+
 instance : partial_order heap_ty :=
-{ le := (<:+),
-  le_refl := list.suffix_refl,
-  le_trans := @list.is_suffix.trans _,
+{ le := (<+:),
+  le_refl := list.prefix_refl,
+  le_trans := @list.is_prefix.trans _,
   le_antisymm := λ l₁ l₂ h₁ h₂, list.sublist_antisymm
-    (list.sublist_of_suffix h₁) (list.sublist_of_suffix h₂) }
+    (list.sublist_of_prefix h₁) (list.sublist_of_prefix h₂) }
 
 namespace value
+
+inductive to_map : value → alist ident (λ _, value) → Prop
+| nil : to_map nil ∅
+| cons {f v vs s} (h) : to_map vs s →
+  to_map (cons (named f v) vs) (s.cons f v h)
 
 inductive ok (Γ : ast) (E : heap_ty) : value → vtype → Prop
 | int {} {n} : ok (int n) vtype.int
@@ -65,7 +67,10 @@ inductive ok (Γ : ast) (E : heap_ty) : value → vtype → Prop
 | cons {v₁ v₂ τ₁ τ₂} : ok v₁ τ₁ → ok v₂ τ₂ →
   ok (cons v₁ v₂) (vtype.cons τ₁ τ₂)
 | arr {v τ n} : ok v (vtype.arr' τ n) → ok (arr n v) (vtype.arr τ)
-| struct {v s} : (∀ sd x τ vτ v',
+| struct {v s vs} :
+  to_map v vs →
+  (∀ sd, Γ.get_sdef s sd → alist.forall₂ (λ _ _ _, true) sd vs) →
+  (∀ sd x τ vτ v',
     Γ.get_sdef s sd →
     τ ∈ sd.lookup x →
     vtype.of_ty (ast.exp.type.reg τ) vτ →
@@ -183,16 +188,16 @@ inductive cont.ok (Γ : ast) (E : heap_ty) (σ : vars_ty)
 | addr_field {δ s f sd t τ K} :
   Γ.get_sdef s sd → t ∈ sd.lookup f →
   vtype.of_ty (reg t) τ →
-  cont.ok δ K (vtype.struct s) →
-  cont.ok δ (cont.addr_field f K) τ
+  cont.ok δ K τ →
+  cont.ok δ (cont.addr_field f K) (vtype.struct s)
 
 | addr_index₁ {δ e₂ τ K} :
   exp.ok Γ Δ e₂ (reg int) →
   exp.use e₂ ⊆ δ →
   cont.ok δ K τ →
-  cont.ok δ (cont.addr_index₁ e₂ K) (vtype.arr τ)
+  cont.ok δ (cont.addr_index₁ e₂ K) (vtype.ref (vtype.arr τ))
 | addr_index₂ {δ a τ K} :
-  addr_opt.ok Γ E σ a (vtype.arr τ) →
+  addr_opt.ok Γ E σ a (vtype.ref (vtype.arr τ)) →
   cont.ok δ K τ →
   cont.ok δ (cont.addr_index₂ a K) vtype.int
 
@@ -239,8 +244,8 @@ inductive cont.ok (Γ : ast) (E : heap_ty) (σ : vars_ty)
   Γ.get_fdef f ⟨τs, τ⟩ →
   vtype.of_ty (rego τ) vτ →
   vtype.of_ty (ls τs) vτs →
-  cont.ok δ K vτs →
-  cont.ok δ (cont.call f K) vτ
+  cont.ok δ K vτ →
+  cont.ok δ (cont.call f K) vτs
 
 | deref {δ τ K} : cont.ok δ K τ → cont.ok δ (cont.deref K) τ
 

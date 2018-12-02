@@ -287,7 +287,8 @@ inductive ok (Γ : ast) : gdecl → Prop
     header = ff ∧
     ¬ is_fdef Γ f ∧
     stmt.ok (fdecl header f xτs ret body :: Γ) ret' Δ s ∧
-    s.returns ∧ s.ok_init Δ) →
+    (s.returns ∨ ret = none) ∧
+    s.ok_init Δ) →
   ok (fdecl header f xτs ret body)
 | typedef (x τ τ') :
   (∀ τ, typedef x τ ∉ Γ) →
