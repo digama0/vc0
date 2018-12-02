@@ -197,7 +197,7 @@ inductive cont.ok (Γ : ast) (E : heap_ty) (σ : vars_ty)
   cont.ok δ K τ →
   cont.ok δ (cont.addr_index₁ e₂ K) (vtype.ref (vtype.arr τ))
 | addr_index₂ {δ a τ K} :
-  addr_opt.ok Γ E σ a (vtype.ref (vtype.arr τ)) →
+  addr_opt.ok Γ E σ a (vtype.arr τ) →
   cont.ok δ K τ →
   cont.ok δ (cont.addr_index₂ a K) vtype.int
 

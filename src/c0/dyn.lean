@@ -69,20 +69,20 @@ inductive step_binop : binop → value → value → value ⊕ err → Prop
 | add {n₁ n₂} : step_binop binop.add (int n₁) (int n₂) (inl $ int (n₁ + n₂))
 | sub {n₁ n₂} : step_binop binop.sub (int n₁) (int n₂) (inl $ int (n₁ - n₂))
 | mul {n₁ n₂} : step_binop binop.mul (int n₁) (int n₂) (inl $ int (n₁ * n₂))
-| div {n₁ n₂} : step_binop binop.mul (int n₁) (int n₂) (to_err $ n₁.div n₂)
-| mod {n₁ n₂} : step_binop binop.mul (int n₁) (int n₂) (to_err $ n₁.mod n₂)
+| div {n₁ n₂} : step_binop binop.div (int n₁) (int n₂) (to_err $ n₁.div n₂)
+| mod {n₁ n₂} : step_binop binop.mod (int n₁) (int n₂) (to_err $ n₁.mod n₂)
 | band {n₁ n₂} : step_binop binop.band (int n₁) (int n₂) (inl $ int $ n₁.bitwise_and n₂)
 | bxor {n₁ n₂} : step_binop binop.bxor (int n₁) (int n₂) (inl $ int $ n₁.bitwise_xor n₂)
 | bor {n₁ n₂} : step_binop binop.bor (int n₁) (int n₂) (inl $ int $ n₁.bitwise_or n₂)
-| shl {n₁ n₂} : step_binop binop.mul (int n₁) (int n₂) (to_err $ n₁.shl n₂)
-| shr {n₁ n₂} : step_binop binop.mul (int n₁) (int n₂) (to_err $ n₁.shr n₂)
+| shl {n₁ n₂} : step_binop binop.shl (int n₁) (int n₂) (to_err $ n₁.shl n₂)
+| shr {n₁ n₂} : step_binop binop.shr (int n₁) (int n₂) (to_err $ n₁.shr n₂)
 | comp {c v₁ v₂ b} :
   step_comp c v₁ v₂ b → step_binop (binop.comp c) v₁ v₂ (inl $ bool b)
 
 inductive step_unop : unop → value → value → Prop
 | neg {n} : step_unop unop.neg (int n) (int (-n))
-| not {b} : step_unop unop.neg (bool b) (bool (bnot b))
-| bnot {n} : step_unop unop.neg (int n) (int n.bitwise_not)
+| not {b} : step_unop unop.not (bool b) (bool (bnot b))
+| bnot {n} : step_unop unop.bnot (int n) (int n.bitwise_not)
 
 inductive default (Γ : ast) : type ⊕ sdef → value → Prop
 | int : default (inl type.int) (int 0)
@@ -159,7 +159,7 @@ inductive cont : cont_ty → Type
 | ret : cont V                                 -- ret _
 | addr_deref : cont A → cont V                 -- &(*_) : K
 | addr_field : ident → cont A → cont A         -- &(_.f) : K
-| addr_index₁ : exp → cont A → cont A          -- &(_[e₂]) : K
+| addr_index₁ : exp → cont A → cont V          -- &(_[e₂]) : K
 | addr_index₂ : option addr → cont A → cont V  -- &(a[_]) : K
 | binop₁ : binop → exp → cont V → cont V       -- _ op e₂ : K
 | binop₂ : value → binop → cont V → cont V     -- v op _ : K
@@ -201,10 +201,11 @@ inductive step_ret : env → value → state → Prop
   step_ret ⟨H, (η, K) :: S, η'⟩ v (state.ret V ⟨H, S, η⟩ v K)
 | done {H η n} : step_ret ⟨H, [], η⟩ (value.int n) (state.done n)
 
-inductive step_call : value → vars → Prop
-| nil : step_call value.nil ∅
-| cons {x v vs η} :
-  step_call vs η → step_call (value.cons v vs) (η.insert x v)
+inductive step_call : ctx → value → vars → Prop
+| nil : step_call ∅ value.nil ∅
+| cons {Δ x τ v vs η} (h) :
+  step_call Δ vs η →
+  step_call (Δ.cons x τ h) (value.cons v vs) (η.insert x v)
 
 inductive step_deref : env → option addr → cont V → state → Prop
 | null {C K} : step_deref C none K (state.err err.mem)
@@ -364,7 +365,7 @@ inductive step (Γ : ast) : state → io → state → Prop
        (state.exp V C es $ cont.call f K)
 | call₂ {H S η η' f τ xτs s vs K} :
   Γ.get_body f τ xτs s →
-  step_call vs η' →
+  step_call xτs vs η' →
   step (state.ret V ⟨H, S, η⟩ vs $ cont.call f K) none
        (state.stmt ⟨H, (η, K) :: S, η'⟩ s [])
 | call_extern {H S η f vs H' v K} :
@@ -379,11 +380,15 @@ inductive step (Γ : ast) : state → io → state → Prop
 
 | index {C e n K} :
   step (state.exp V C (exp.index e n) K) none
-       (state.exp A C e $ cont.addr_index₁ n $ cont.deref K)
+       (state.exp V C e $ cont.addr_index₁ n $ cont.deref K)
 
 | field {C:env} {e f K} :
   step (state.exp V C (exp.field e f) K) none
        (state.exp A C e $ cont.addr_field f $ cont.deref K)
+
+| deref' {C a K T} :
+  step_deref C a K T →
+  step (state.ret A C a $ cont.deref K) none T
 
 | alloc_ref {C τ τ' v K T} :
   Γ.eval_ty τ τ' →
@@ -398,7 +403,7 @@ inductive step (Γ : ast) : state → io → state → Prop
 | alloc_arr₂ {C τ v K T} {i : int32} {n : ℕ} :
   (i : ℤ) = n →
   value.default Γ (sum.inl τ) v →
-  step_alloc C (value.repeat v n) K T →
+  step_alloc C (value.arr n (value.repeat v n)) K T →
   step (state.ret V C (value.int i) $ cont.alloc_arr τ K) none T
 | alloc_arr_err {C τ i K} : i < 0 →
   step (state.ret V C (value.int i) $ cont.alloc_arr τ K) none
@@ -417,10 +422,10 @@ inductive step (Γ : ast) : state → io → state → Prop
 
 | addr_index₁ {C e n K} :
   step (state.exp A C (exp.index e n) K) none
-       (state.exp A C e $ cont.addr_index₁ n K)
+       (state.exp V C e $ cont.addr_index₁ n K)
 | addr_index₂ {C a n K} :
-  step (state.ret A C a $ cont.addr_index₁ n K) none
-       (state.exp V C n $ cont.addr_index₂ a K)
+  step (state.ret V C (value.ref a) $ cont.addr_index₁ n K) none
+       (state.exp V C n $ cont.addr_index₂ (addr.ref <$> a) K)
 | addr_index₃ {C:env} {a n K} {i:int32} {j:ℕ} :
   addr.get_len C.heap C.vars a n → (i:ℤ) = j → j < n →
   step (state.ret V C (value.int i) $ cont.addr_index₂ (some a) K) none
