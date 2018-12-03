@@ -231,220 +231,220 @@ inductive step (Γ : ast) : state → io → state → Prop
   step (state.stmt ⟨H, S, η⟩ (decl_asgn v τ e s) K) none
        (state.stmt ⟨H, S, η⟩ (asgn (lval.var v) e) (s :: K))
 
-| If₁ {C c s₁ s₂ K} :
+| If₁ {} {C c s₁ s₂ K} :
   step (state.stmt C (If c s₁ s₂) K) none
        (state.exp V C c $ cont.If s₁ s₂ K)
-| If₂ {C b s₁ s₂ K} :
+| If₂ {} {C b s₁ s₂ K} :
   step (state.ret V C (value.bool b) $ cont.If s₁ s₂ K) none
        (state.stmt C (cond b s₁ s₂) K)
 
-| while {C c s K} :
+| while {} {C c s K} :
   step (state.stmt C (while c s) K) none
        (state.exp V C c $ cont.If (seq s (while c s)) nop K)
 
-| asgn₁ {C lv e K} :
+| asgn₁ {} {C lv e K} :
   lval.is_var lv = none →
   step (state.stmt C (asgn lv e) K) none
        (state.exp A C lv.to_exp $ cont.asgn₁ e K)
-| asgn₂ {C a e K} :
+| asgn₂ {} {C a e K} :
   step (state.ret A C a $ cont.asgn₁ e K) none
        (state.exp V C e $ cont.asgn₂ a K)
-| asgn₃ {H H' S η η' a v K} :
+| asgn₃ {} {H H' S η η' a v K} :
   addr.update H η (λ _, eq v) a H' η' →
   step (state.ret V ⟨H, S, η⟩ v $ cont.asgn₂ (some a) K) none
        (state.stmt ⟨H', S, η'⟩ nop K)
-| asgn_err {H S η v K} :
+| asgn_err {} {H S η v K} :
   step (state.ret V ⟨H, S, η⟩ v $ cont.asgn₂ none K) none
        (state.err err.mem)
 
-| asgn_var₁ {C lv x e K} :
+| asgn_var₁ {} {C lv x e K} :
   x ∈ lval.is_var lv →
   step (state.stmt C (asgn lv e) K) none
        (state.exp V C e $ cont.asgn_var x K)
-| asgn_var₂ {H S η x v K} :
+| asgn_var₂ {} {H S η x v K} :
   step (state.ret V ⟨H, S, η⟩ v $ cont.asgn_var x K) none
        (state.stmt ⟨H, S, η.assign x v⟩ nop K)
 
-| asnop₁ {C lv op e K} :
+| asnop₁ {} {C lv op e K} :
   step (state.stmt C (asnop lv op e) K) none
        (state.exp A C lv.to_exp $ cont.asnop op e K)
-| asnop₂ {C a op e K T} :
+| asnop₂ {} {C a op e K T} :
   step_deref C a (cont.binop₁ op e $ cont.asgn₂ a K) T →
   step (state.ret A C a $ cont.asnop op e K) none T
 
-| eval₁ {C e K} :
+| eval₁ {} {C e K} :
   step (state.stmt C (eval e) K) none
        (state.exp V C e $ cont.eval K)
-| eval₂ {C v K} :
+| eval₂ {} {C v K} :
   step (state.ret V C v $ cont.eval K) none
        (state.stmt C nop K)
 
-| assert₁ {C e K} :
+| assert₁ {} {C e K} :
   step (state.stmt C (assert e) K) none
        (state.exp V C e $ cont.assert K)
-| assert₂ {C b K} :
+| assert₂ {} {C b K} :
   step (state.ret V C (value.bool b) $ cont.assert K) none
        (cond b (state.stmt C nop K) (state.err err.abort))
 
-| ret₁ {C e K} :
+| ret₁ {} {C e K} :
   step (state.stmt C (ret (some e)) K) none
        (state.exp V C e cont.ret)
-| ret₂ {C T v} :
+| ret₂ {} {C T v} :
   step_ret C v T → step (state.ret V C v cont.ret) none T
-| ret_none {C T K} :
+| ret_none {} {C T K} :
   step_ret C value.nil T → step (state.stmt C (ret none) K) none T
 
-| nop₁ {C T} : step_ret C value.nil T → step (state.stmt C nop []) none T
-| nop₂ {C s K} : step (state.stmt C nop (s::K)) none (state.stmt C s K)
+| nop₁ {} {C T} : step_ret C value.nil T → step (state.stmt C nop []) none T
+| nop₂ {} {C s K} : step (state.stmt C nop (s::K)) none (state.stmt C s K)
 
-| seq {C s₁ s₂ K} :
+| seq {} {C s₁ s₂ K} :
   step (state.stmt C (seq s₁ s₂) K) none (state.stmt C s₁ (s₂::K))
 
-| int {C n K} :
+| int {} {C n K} :
   step (state.exp V C (exp.int n) K) none
        (state.ret V C (value.int n) K)
 
-| bool {C b K} :
+| bool {} {C b K} :
   step (state.exp V C (exp.bool b) K) none
        (state.ret V C (value.bool b) K)
 
-| null {C K} :
+| null {} {C K} :
   step (state.exp V C exp.null K) none
        (state.ret V C (value.ref none) K)
 
-| var {C:env} {i v K} : v ∈ C.vars.lookup i →
+| var {} {C:env} {i v K} : v ∈ C.vars.lookup i →
   step (state.exp V C (exp.var i) K) none
        (state.ret V C v K)
 
-| binop₁ {C op e₁ e₂ K} :
+| binop₁ {} {C op e₁ e₂ K} :
   step (state.exp V C (exp.binop op e₁ e₂) K) none
        (state.exp V C e₁ $ cont.binop₁ op e₂ K)
-| binop₂ {C op v₁ e₂ K} :
+| binop₂ {} {C op v₁ e₂ K} :
   step (state.ret V C v₁ $ cont.binop₁ op e₂ K) none
        (state.exp V C e₂ $ cont.binop₂ v₁ op K)
-| binop₃ {C op v₁ v₂ v K} :
+| binop₃ {} {C op v₁ v₂ v K} :
   value.step_binop op v₁ v₂ (sum.inl v) →
   step (state.ret V C v₂ $ cont.binop₂ v₁ op K) none
        (state.ret V C v K)
-| binop_err {C op v₁ v₂ err K} :
+| binop_err {} {C op v₁ v₂ err K} :
   value.step_binop op v₁ v₂ (sum.inr err) →
   step (state.ret V C v₂ $ cont.binop₂ v₁ op K) none
        (state.err err)
 
-| unop₁ {C op e K} :
+| unop₁ {} {C op e K} :
   step (state.exp V C (exp.unop op e) K) none
        (state.exp V C e $ cont.unop op K)
-| unop₂ {C op v v' K} :
+| unop₂ {} {C op v v' K} :
   value.step_unop op v v' →
   step (state.ret V C v $ cont.unop op K) none
        (state.ret V C v' K)
 
-| cond₁ {C c e₁ e₂ K} :
+| cond₁ {} {C c e₁ e₂ K} :
   step (state.exp V C (exp.cond c e₁ e₂) K) none
        (state.exp V C c $ cont.cond e₁ e₂ K)
-| cond₂ {C b e₁ e₂ K} :
+| cond₂ {} {C b e₁ e₂ K} :
   step (state.ret V C (value.bool b) $ cont.cond e₁ e₂ K) none
        (state.exp V C (cond b e₁ e₂) K)
 
-| nil {C K} :
+| nil {} {C K} :
   step (state.exp V C exp.nil K) none
        (state.ret V C value.nil K)
 
-| cons₁ {C e es K} :
+| cons₁ {} {C e es K} :
   step (state.exp V C (exp.cons e es) K) none
        (state.exp V C e $ cont.cons₁ es K)
-| cons₂ {C v es K} :
+| cons₂ {} {C v es K} :
   step (state.ret V C v $ cont.cons₁ es K) none
        (state.exp V C es $ cont.cons₂ v K)
-| cons₃ {C v₁ v₂ K} :
+| cons₃ {} {C v₁ v₂ K} :
   step (state.ret V C v₂ $ cont.cons₂ v₁ K) none
        (state.ret V C (value.cons v₁ v₂) K)
 
-| call₁ {C f es K} :
+| call₁ {} {C f es K} :
   step (state.exp V C (exp.call f es) K) none
        (state.exp V C es $ cont.call f K)
-| call₂ {H S η η' f τ xτs s vs K} :
+| call₂ {} {H S η η' f τ xτs s vs K} :
   Γ.get_body f τ xτs s →
   step_call xτs vs η' →
   step (state.ret V ⟨H, S, η⟩ vs $ cont.call f K) none
        (state.stmt ⟨H, (η, K) :: S, η'⟩ s [])
-| call_extern {H S η f vs H' v K} :
+| call_extern {} {H S η f vs H' v K} :
   Γ.is_extern f →
   step (state.ret V ⟨H, S, η⟩ vs $ cont.call f K)
        (some ((f, H, vs), (H', v)))
        (state.ret V ⟨H', S, η⟩ v K)
 
-| deref {C e K} :
+| deref {} {C e K} :
   step (state.exp V C (exp.deref e) K) none
        (state.exp V C e $ cont.addr_deref $ cont.deref K)
 
-| index {C e n K} :
+| index {} {C e n K} :
   step (state.exp V C (exp.index e n) K) none
        (state.exp V C e $ cont.addr_index₁ n $ cont.deref K)
 
-| field {C:env} {e f K} :
+| field {} {C:env} {e f K} :
   step (state.exp V C (exp.field e f) K) none
        (state.exp A C e $ cont.addr_field f $ cont.deref K)
 
-| deref' {C a K T} :
+| deref' {} {C a K T} :
   step_deref C a K T →
   step (state.ret A C a $ cont.deref K) none T
 
-| alloc_ref {C τ τ' v K T} :
+| alloc_ref {} {C τ τ' v K T} :
   Γ.eval_ty τ τ' →
   value.default Γ (sum.inl τ') v →
   step_alloc C v K T →
   step (state.exp V C (exp.alloc_ref τ) K) none T
 
-| alloc_arr₁ {C τ τ' e K} :
+| alloc_arr₁ {} {C τ τ' e K} :
   Γ.eval_ty τ τ' →
   step (state.exp V C (exp.alloc_arr τ e) K) none
        (state.exp V C e $ cont.alloc_arr τ' K)
-| alloc_arr₂ {C τ v K T} {i : int32} {n : ℕ} :
+| alloc_arr₂ {} {C τ v K T} {i : int32} {n : ℕ} :
   (i : ℤ) = n →
   value.default Γ (sum.inl τ) v →
   step_alloc C (value.arr n (value.repeat v n)) K T →
   step (state.ret V C (value.int i) $ cont.alloc_arr τ K) none T
-| alloc_arr_err {C τ i K} : i < 0 →
+| alloc_arr_err {} {C τ i K} : i < 0 →
   step (state.ret V C (value.int i) $ cont.alloc_arr τ K) none
        (state.err err.mem)
 
-| addr_var {C v K} :
+| addr_var {} {C v K} :
   step (state.exp A C (exp.var v) K) none
        (state.ret A C (some (addr.var v)) K)
 
-| addr_deref₁ {C e K} :
+| addr_deref₁ {} {C e K} :
   step (state.exp A C (exp.deref e) K) none
        (state.exp V C e $ cont.addr_deref K)
-| addr_deref₂ {C v K} :
+| addr_deref₂ {} {C v K} :
   step (state.ret V C (value.ref v) $ cont.addr_deref K) none
        (state.ret A C (addr.ref <$> v) K)
 
-| addr_index₁ {C e n K} :
+| addr_index₁ {} {C e n K} :
   step (state.exp A C (exp.index e n) K) none
        (state.exp V C e $ cont.addr_index₁ n K)
-| addr_index₂ {C a n K} :
+| addr_index₂ {} {C a n K} :
   step (state.ret V C (value.ref a) $ cont.addr_index₁ n K) none
        (state.exp V C n $ cont.addr_index₂ (addr.ref <$> a) K)
-| addr_index₃ {C:env} {a n K} {i:int32} {j:ℕ} :
+| addr_index₃ {} {C:env} {a n K} {i:int32} {j:ℕ} :
   addr.get_len C.heap C.vars a n → (i:ℤ) = j → j < n →
   step (state.ret V C (value.int i) $ cont.addr_index₂ (some a) K) none
        (state.ret A C (some (a.nth j)) K)
-| addr_index_err₁ {C i K} :
+| addr_index_err₁ {} {C i K} :
   step (state.ret V C (value.int i) $ cont.addr_index₂ none K) none
        (state.err err.mem)
-| addr_index_err₂ {C:env} {a n i K} :
+| addr_index_err₂ {} {C:env} {a n K} {i:int32} :
   addr.get_len C.heap C.vars a n → (i < 0 ∨ (n:ℤ) ≤ (i:ℤ)) →
   step (state.ret V C (value.int i) $ cont.addr_index₂ (some a) K) none
        (state.err err.mem)
 
-| addr_field₁ {C:env} {e f K} :
+| addr_field₁ {} {C:env} {e f K} :
   step (state.exp A C (exp.field e f) K) none
        (state.exp A C e $ cont.addr_field f K)
-| addr_field₂ {C a f K} :
+| addr_field₂ {} {C a f K} :
   step (state.ret A C (some a) $ cont.addr_field f K) none
        (state.ret A C (some (a.field f)) K)
-| addr_field_err {C f K} :
+| addr_field_err {} {C f K} :
   step (state.ret A C none $ cont.addr_field f K) none
        (state.err err.mem)
 

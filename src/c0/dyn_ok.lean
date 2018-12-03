@@ -139,6 +139,16 @@ def cont_ty.ok (Γ : ast) (E : heap_ty) (σ : vars_ty) :
 | V := value.ok Γ E
 | A := addr_opt.ok Γ E σ
 
+inductive lv_ok : exp → Prop
+| var {v} : lv_ok (var v)
+| deref {e} : lv_ok (deref e)
+| index {e₁ e₂} : lv_ok (index e₁ e₂)
+| field {e f} : lv_ok e → lv_ok (field e f)
+
+def lv_ok' : cont_ty → exp → Prop
+| V e := true
+| A e := lv_ok e
+
 inductive cont.ok (Γ : ast) (E : heap_ty) (σ : vars_ty)
   (Δ : ctx) (ret : vtype) : finset ident → ∀ {α}, cont α → vtype → Prop
 | If {} {s₁ s₂ δ δ₁ δ₂ K τ} :
@@ -294,7 +304,7 @@ inductive state.ok (Γ : ast) : state → Prop
   state.ok (state.stmt C s K)
 | exp {E σs σ H η S Δ ret τ e α K} :
   env.ok Γ ⟨E, σs, σ, Δ⟩ ⟨H, S, η⟩ ret →
-  exp.use e ⊆ σ.keys →
+  exp.use e ⊆ σ.keys → lv_ok' α e →
   exp.ok_vtype Γ Δ e τ →
   cont.ok' Γ E σ Δ ret K τ →
   state.ok (state.exp α ⟨H, S, η⟩ e K)

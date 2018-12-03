@@ -236,6 +236,12 @@ end
 
 end exp
 
+theorem lval.ok : ∀ (lv : lval), lv_ok lv.to_exp
+| (lval.var v)       := lv_ok.var
+| (lval.deref e)     := lv_ok.deref
+| (lval.index e₁ e₂) := lv_ok.index
+| (lval.field e f)   := lv_ok.field (lval.ok e)
+
 namespace stmt
 
 theorem ok.weak {Γ ret_τ Δ s d} (h : stmt.ok Γ ret_τ Δ s) : stmt.ok (d :: Γ) ret_τ Δ s :=
@@ -325,7 +331,7 @@ end ast
 inductive fdecl_ok (Γ : ast) (header xτs ret body) : Prop
 | mk (Δ ret' h) :
   alist.forall₂ (λ (i:ident) τ τ', eval_ty Γ τ τ' ∧ τ'.small) (alist.mk' xτs h) Δ →
-  option.forall₂ (eval_ty Γ) ret ret' →
+  option.forall₂ (λ τ τ', eval_ty Γ τ τ' ∧ τ'.small) ret ret' →
   (∀ s ∈ (body : option stmt),
     header = ff ∧
     stmt.ok Γ ret' Δ s ∧
@@ -342,17 +348,35 @@ begin
   { cases g with _ _ _ Δ _ ret' _ h₁ h₂ h₃ h₄,
     refine ⟨Δ, ret', h₁,
       h₂.imp (λ _ _ _ ⟨h₁, h₂⟩, ⟨h₁.weak, h₂⟩),
-      h₃.imp (λ _ _ h, h.weak),
+      h₃.imp (λ _ _ ⟨h₁, h₂⟩, ⟨h₁.weak, h₂⟩),
       λ s hs, _⟩,
     rcases h₄ s hs with ⟨hs₁, _, hs₂, hs₃, hs₄⟩,
     exact ⟨hs₁, hs₂, hs₃, hs₄⟩ },
   { cases IH m with Δ ret' h₁ h₂ h₃ h₄,
     refine ⟨Δ, ret', h₁,
       h₂.imp (λ _ _ _ ⟨h₁, h₂⟩, ⟨h₁.weak, h₂⟩),
-      h₃.imp (λ _ _ h, h.weak),
+      h₃.imp (λ _ _ ⟨h₁, h₂⟩, ⟨h₁.weak, h₂⟩),
       λ s hs, _⟩,
     rcases h₄ s hs with ⟨hs₁, hs₂, hs₃⟩,
     exact ⟨hs₁, hs₂.weak, hs₃⟩ }
+end
+
+theorem lv_ok_of_struct {Γ : ast} {Δ e s} (ok : Γ.okind)
+  (eok : exp.ok Γ Δ e (exp.type.reg (c0.type.struct s))) : lv_ok e :=
+begin
+  generalize_hyp eq : exp.type.reg (c0.type.struct s) = τ at eok,
+  induction eok generalizing s;
+    try {cases eq, done}; try {constructor, done},
+  { cases eok_a_2; cases eq },
+  { cases eok_a_1; cases eq },
+  { cases eq, cases eok_a_3 },
+  { cases eok_a,
+    cases fdecl_ok_of_mem ok eok_a_a,
+    cases eok_a_a_2; cases eq,
+    rcases a_1 with _|⟨_, _, h₁, h₂⟩,
+    cases ast.eval_ty.determ ok eok_a_a_2_a_1 h₁,
+    cases h₂ },
+  { exact lv_ok.field (eok_ih rfl) }
 end
 
 theorem sdecl_ok_of_mem {Γ : ast} (ok : Γ.okind) {s xτs} :
@@ -433,7 +457,8 @@ theorem get_body_ok' {Γ : ast} (ok : Γ.okind) {f τ Δ s} (h : Γ.get_body f �
 begin
   cases h,
   cases fdecl_ok_of_mem ok h_a,
-  cases ast.eval_ty.determ_opt ok h_a_2 a_1,
+  have : option.forall₂ (eval_ty Γ) h_τ ret' := a_1.imp (λ _ _, and.left),
+  cases ast.eval_ty.determ_opt ok h_a_2 this,
   have : alist.forall₂ (λ _, eval_ty Γ) (alist.mk' h_xτs h_nd) Δ_1 :=
     a.imp (λ _ _ _, and.left),
   cases ast.eval_ty.determ_alist ok h_a_1 this,
@@ -630,5 +655,12 @@ theorem ok.ref_opt {Γ E σ n τ}
 by cases h; [trivial, exact addr.ok.ref h_a]
 
 end addr
+
+theorem stmt_list.ok.eq_none {Γ Δ δ ret}
+  (Kok : stmt_list.ok Γ ret Δ δ []) : ret = none :=
+begin
+  generalize e : ([]:list stmt) = ss, rw e at Kok,
+  induction Kok; cases e; [exact Kok_a, exact Kok_ih rfl]
+end
 
 end c0

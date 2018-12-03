@@ -183,6 +183,7 @@ def use_func : exp → finset ident
 | (alloc_arr _ e) := use_func e
 
 end exp
+
 namespace lval
 
 def is_var : lval → option ident
@@ -282,7 +283,7 @@ namespace gdecl
 inductive ok (Γ : ast) : gdecl → Prop
 | fdecl (header f xτs Δ ret ret' body h) :
   alist.forall₂ (λ i τ τ', eval_ty Γ τ τ' ∧ τ'.small) (alist.mk' xτs h) Δ →
-  option.forall₂ (eval_ty Γ) ret ret' →
+  option.forall₂ (λ τ τ', eval_ty Γ τ τ' ∧ τ'.small) ret ret' →
   (∀ s ∈ body,
     header = ff ∧
     ¬ is_fdef Γ f ∧
