@@ -379,6 +379,23 @@ begin
   { exact lv_ok.field (eok_ih rfl) }
 end
 
+theorem sdecl_ok1 {Γ : ast} {s xτs}
+  (g : c0.ast.gdecl.ok Γ (sdecl s (some xτs))) :
+  ∃ nd Δ, alist.forall₂ (λ _, eval_ty Γ) (alist.mk' xτs nd) Δ ∧
+   ∀ τ ∈ Δ.values, Γ.sized τ :=
+begin
+  rcases g with _|_|_|⟨_, _, h, nd, H⟩, clear h, refine ⟨nd, _⟩,
+  induction xτs with xτ xτs IH,
+  { exact ⟨∅, list.forall₂.nil, list.forall_mem_nil _⟩ },
+  cases xτ with x τ,
+  cases list.nodup_cons.1 nd with nd₁ nd₂,
+  rcases list.forall_mem_cons.1 H with ⟨⟨τ', h, hs⟩, H'⟩,
+  rcases IH nd₂ H' with ⟨Δ, h₁, h₂⟩,
+  refine ⟨Δ.cons x τ' _, list.forall₂.cons ⟨h⟩ h₁,
+    list.forall_mem_cons.2 ⟨hs, h₂⟩⟩,
+  rwa [← h₁.mem_iff, ← alist.mem_keys, alist.mk'_keys]
+end
+
 theorem sdecl_ok_of_mem {Γ : ast} (ok : Γ.okind) {s xτs} :
   sdecl s (some xτs) ∈ Γ →
   ∃ nd Δ, alist.forall₂ (λ _, eval_ty Γ) (alist.mk' xτs nd) Δ ∧
@@ -391,16 +408,7 @@ begin
   { rcases this with ⟨nd, Δ, h₁, h₂⟩,
     exact ⟨nd, Δ, h₁.imp (λ _ _ _, eval_ty.weak), λ τ h, (h₂ τ h).weak⟩ },
   rcases m with rfl | m,
-  { rcases g with _|_|_|⟨_, _, h, nd, H⟩, clear h IH, refine ⟨nd, _⟩,
-    induction xτs with xτ xτs IH,
-    { exact ⟨∅, list.forall₂.nil, list.forall_mem_nil _⟩ },
-    cases xτ with x τ,
-    cases list.nodup_cons.1 nd with nd₁ nd₂,
-    rcases list.forall_mem_cons.1 H with ⟨⟨τ', h, hs⟩, H'⟩,
-    rcases IH nd₂ H' with ⟨Δ, h₁, h₂⟩,
-    refine ⟨Δ.cons x τ' _, list.forall₂.cons ⟨h⟩ h₁,
-      list.forall_mem_cons.2 ⟨hs, h₂⟩⟩,
-    rwa [← h₁.mem_iff, ← alist.mem_keys, alist.mk'_keys] },
+  { exact sdecl_ok1 g },
   { exact IH m }
 end
 
@@ -644,6 +652,9 @@ begin
     { constructor },
     { exact is_field.cons (h_ih $ alist.mem_lookup_iff.2 m) } }
 end
+
+theorem default.weak {Γ d sd v} (h : default Γ sd v) : default (d :: Γ) sd v :=
+by induction h; constructor; try {assumption}; exact h_a.weak
 
 end value
 

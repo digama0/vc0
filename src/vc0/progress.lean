@@ -5,8 +5,38 @@ open ast
 
 namespace value
 
-theorem default_exists {Γ} (ts) : ∃ (v : value), default Γ ts v :=
-sorry
+def ts_sized (Γ : ast) : type ⊕ sdef → Prop
+| (sum.inl τ) := Γ.sized τ
+| (sum.inr sd) := ∀ τ ∈ sd.values, Γ.sized τ
+
+theorem default_exists {Γ : ast} (ok : Γ.okind) :
+  ∀ ts, ts_sized Γ ts → ∃ (v : value), default Γ ts v :=
+ast.okind.induction' ok $ λ Γ ok IH, begin
+  have : ∀ {τ}, Γ.sized τ → ∃ (v : value), default Γ (sum.inl τ) v,
+  { intros τ sz, induction τ,
+    { exact ⟨_, default.int⟩ },
+    { exact ⟨_, default.bool⟩ },
+    { exact ⟨_, default.ref⟩ },
+    { exact ⟨_, default.arr⟩ },
+    { cases sz with sd h,
+      cases (get_sdef_ex_iff ok).1 ⟨_, h⟩ with xτs m,
+      cases IH with d Γ ok' IH'; rcases m with rfl | m,
+      { rcases sdecl_ok1 ok' with ⟨nd, sd', al, sz⟩,
+        cases get_sdef_determ ok h ⟨or.inl rfl, al.imp $ λ _ _ _ h, h.weak⟩,
+        rcases IH' (sum.inr sd) sz with ⟨v, h'⟩,
+        exact ⟨_, default.struct h h'.weak⟩ },
+      { cases ok,
+        cases (get_sdef_ex_iff ok_a_1).2 ⟨_, m⟩ with sd' h₁,
+        cases IH' (sum.inl (type.struct τ)) ⟨_, h₁⟩ with v h₂,
+        exact ⟨v, h₂.weak⟩ } } },
+  rintro (τ | sd) sz,
+  { exact this sz },
+  { refine alist.rec' (λ sz, ⟨_, default.nil⟩) (λ sd x τ h IH sz, _) sd sz,
+    cases list.forall_mem_cons.1 sz with sz₁ sz₂,
+    cases this sz₁ with v v0,
+    cases IH sz₂ with vs vs0,
+    exact ⟨_, default.cons v0 vs0⟩ }
+end
 
 end value
 
@@ -92,7 +122,7 @@ begin
       { cases sok_a, cases tτ,
         cases step_ret.progress Sok value.ok.nil with s' h,
         exact prog (step.ret_none h) },
-      { exact prog (step.ret₁) } },
+      { exact prog step.ret₁ } },
     { cases K,
       { rcases Kok with ⟨⟨⟩⟩ | Kok,
         cases Kok.eq_none, cases tτ,
@@ -121,7 +151,7 @@ begin
       { exact prog step.field },
       { exact prog step.deref },
       { exact prog step.index },
-      { cases value.default_exists _ with v v0,
+      { cases value.default_exists ok.ind (sum.inl _) eok_a_1 with v v0,
         exact prog (step.alloc_ref eok_a v0 ⟨⟩) },
       { exact prog (step.alloc_arr₁ eok_a) } },
     { cases lok,
@@ -181,7 +211,7 @@ begin
       exact prog (step.deref' h) },
     { cases aok,
       rcases alloc_arr.progress aok_1 with ⟨j, h⟩ | h,
-      { cases value.default_exists _ with v v0,
+      { cases value.default_exists ok.ind (sum.inl _) Kok_a_1 with v v0,
         exact prog (step.alloc_arr₂ h v0 ⟨⟩) },
       { exact prog (step.alloc_arr_err h) } } },
   case c0.state.ok.err : err { exact final state.final.err },

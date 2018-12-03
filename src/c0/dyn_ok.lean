@@ -261,6 +261,7 @@ inductive cont.ok (Γ : ast) (E : heap_ty) (σ : vars_ty)
 
 | alloc_arr {δ τ vτ K} :
   vtype.of_ty (reg $ type.arr τ) vτ →
+  Γ.sized τ →
   cont.ok δ K vτ →
   cont.ok δ (cont.alloc_arr τ K) vtype.int
 

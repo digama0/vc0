@@ -85,13 +85,13 @@ inductive step_unop : unop → value → value → Prop
 | bnot {n} : step_unop unop.bnot (int n) (int n.bitwise_not)
 
 inductive default (Γ : ast) : type ⊕ sdef → value → Prop
-| int : default (inl type.int) (int 0)
-| bool : default (inl type.bool) (bool ff)
-| ref {τ} : default (inl $ type.ref τ) (ref none)
-| arr {τ} : default (inl $ type.arr τ) (ref none)
+| int {} : default (inl type.int) (int 0)
+| bool {} : default (inl type.bool) (bool ff)
+| ref {} {τ} : default (inl $ type.ref τ) (ref none)
+| arr {} {τ} : default (inl $ type.arr τ) (ref none)
 | struct {s sd v} : Γ.get_sdef s sd → default (inr sd) v →
   default (inl $ type.struct s) v
-| nil : default (inr ∅) nil
+| nil {} : default (inr ∅) nil
 | cons {Δ x τ h v vs} :
   default (inl τ) v → default (inr Δ) vs →
   default (inr (Δ.cons x τ h)) (cons (named x v) vs)

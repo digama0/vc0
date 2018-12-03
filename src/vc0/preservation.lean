@@ -638,12 +638,12 @@ begin
       eu, _, ⟨t, eok, tτ⟩, Kok⟩, cases eok,
     cases ast.eval_ty.determ ok.ind ττ' eok_a, cases tτ,
     exact state.ok.exp ⟨σok, Eok, ηok, Sok⟩ eu ⟨⟩ ⟨_, eok_a_2, vtype.of_ty.int⟩
-      (cont.ok.alloc_arr tτ Kok) },
+      (cont.ok.alloc_arr tτ eok_a_1 Kok) },
   case c0.step.alloc_arr₂ : C τ v K i n e v0 sa {
     rcases sok with _|_|⟨E, σs, σ, H, η, S, Δ, ret, τ, α, v, K,
       ⟨E, σs, σ, H, η, S, Δ, _, σok, Eok, ηok, Sok⟩,
       vok, Kok⟩, cases Kok, cases Kok_a,
-    exact sa.ok σok Eok ηok Sok (v0.ok' ok _ Kok_a_a).repeat.arr Kok_a_1 },
+    exact sa.ok σok Eok ηok Sok (v0.ok' ok _ Kok_a_a).repeat.arr Kok_a_2 },
   case c0.step.alloc_arr_err : C τ i K i0 { apply state.ok.err },
   case c0.step.addr_var : C v K {
     rcases sok with _|⟨E, σs, σ, H, η, S, Δ, ret, τ, α, v, K,
