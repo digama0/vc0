@@ -503,8 +503,8 @@ theorem vars_ty.ok.erase {Δ σ x t h}
 λ x' τ' h, begin
   rcases finmap.lookup_erase.1 h with ⟨ne, h⟩,
   rcases σok _ _ h with ⟨t', m, tτ'⟩,
-  rcases alist.mem_lookup_iff.1 m with ⟨⟨⟩⟩ | m, {cases ne rfl},
-  exact ⟨t', alist.mem_lookup_iff.2 m, tτ'⟩
+  rcases alist.lookup_cons_iff.1 m with ⟨⟨⟩⟩ | m, {cases ne rfl},
+  exact ⟨t', m, tτ'⟩
 end
 
 theorem vars_ty.ok.ok_of_mem {Δ σ x t τ}
@@ -545,7 +545,8 @@ theorem value.ok.mono {Γ E E' v τ} (EE : E ≤ E')
   (h : value.ok Γ E v τ) : value.ok Γ E' v τ :=
 begin
   induction h; constructor; try {assumption},
-  exact heap_le_nth EE h_a
+  { exact λ x h, heap_le_nth EE (h_a_1 x h) },
+  { exact λ x h, (h_a_1 x h).imp (λ _, heap_le_nth EE) }
 end
 
 theorem vars.ok.mono {Γ E E' σ η} (EE : E ≤ E')
@@ -569,7 +570,8 @@ theorem cont.ok.mono {Γ E E' σ Δ ret δ α τ K} (EE : E ≤ E')
 by induction Kok; constructor; {
   assumption <|>
   exact addr_opt.ok.mono EE (by assumption) <|>
-  exact value.ok.mono EE (by assumption) }
+  exact value.ok.mono EE (by assumption) <|>
+  exact λ a h, (Kok_a _ h).imp (λ _, addr.ok.mono EE) }
 
 theorem stack.ok.mono {Γ E E' σs S ret} (EE : E ≤ E')
   (Sok : stack.ok Γ E σs S ret) : stack.ok Γ E' σs S ret :=
@@ -621,6 +623,12 @@ end vtype
 
 namespace value
 
+theorem ok.null {Γ E τ} : value.ok Γ E (value.ref none) (vtype.ref τ) :=
+value.ok.ref $ by rintro _ ⟨⟩
+
+theorem ok.null_arr {Γ E τ} : value.ok Γ E (value.ref none) (vtype.refarr τ) :=
+value.ok.refarr $ by rintro _ ⟨⟩
+
 theorem is_nth.ok {Γ E i n v v' τ}
   (vok : ok Γ E v (vtype.arr' τ n)) (lt : i < n)
   (h : is_nth i v v') : ok Γ E v' τ :=
@@ -648,13 +656,51 @@ begin
     { exact alist.lookup_cons_self },
     { exact alist.lookup_cons_of_lookup (H_ih h_a) } },
   { induction h generalizing v', {cases H},
-    rcases alist.mem_lookup_iff.1 H with ⟨⟨⟩⟩ | m,
+    rcases alist.lookup_cons_iff.1 H with ⟨⟨⟩⟩ | m,
     { constructor },
-    { exact is_field.cons (h_ih $ alist.mem_lookup_iff.2 m) } }
+    { exact is_field.cons (h_ih m) } }
 end
 
 theorem default.weak {Γ d sd v} (h : default Γ sd v) : default (d :: Γ) sd v :=
 by induction h; constructor; try {assumption}; exact h_a.weak
+
+theorem ok_struct_iff {Γ E v s} : ok Γ E v (vtype.struct s) ↔
+  ∃ vs, to_map v vs ∧
+    ∀ sd, get_sdef Γ s sd →
+      alist.forall₂ (λ _ t v,
+        ∃ τ, vtype.of_ty (exp.type.reg t) τ ∧ ok Γ E v τ) sd vs :=
+begin
+  split,
+  { rintro (_|_|_|_|_|_|_|⟨_, _, vs, m, h₁, h₂⟩),
+    refine ⟨vs, m, λ sd hd, _⟩,
+    replace h₁ := h₁ sd hd,
+    replace h₂ := λ x t τ v', h₂ sd x t τ v' hd,
+    clear hd,
+    replace h₁ := list.forall₂_and_right.2 ⟨h₁, λ _, id⟩,
+    replace h₁ := (list.forall₂_and_left _ _).2 ⟨λ _, id, h₁⟩,
+    refine h₁.imp _, rintro _ _ ⟨it, ⟨i, t, τ, _⟩, iτ⟩,
+    clear a_1_right_left h₁, refine ⟨_⟩,
+    induction m with _ _ v vs nm m IH generalizing sd; rcases iτ with ⟨⟨⟩⟩ | iτ,
+    { exact ⟨_, (vtype.of_ty_fn _).2, h₂ _ _ _ _
+        (alist.mem_lookup_iff.2 it) (vtype.of_ty_fn _).2 is_field.one⟩ },
+    { exact IH iτ _ (λ x t τ v' xt tτ hf, h₂ _ _ _ _ xt tτ (is_field.cons hf)) it } },
+  { rintro ⟨vs, m, al⟩,
+    refine ok.struct m (λ sd hd, (al sd hd).imp (λ _ _ _ _, trivial))
+      (λ sd x t τ v' hd xt tτ hf, _),
+    replace al := al sd hd, clear hd,
+    replace hf := alist.mem_lookup_iff.1 ((is_field_lookup m).1 hf),
+    induction m with _ _ v vs nm m IH generalizing sd, {cases hf},
+    cases sd with sd nd,
+    rcases al with _|⟨_, _, sd, _, ⟨_, t', _, τ', tτ', vok'⟩, al₂⟩,
+    rcases hf with ⟨⟨⟩⟩ | hf,
+    { cases option.mem_unique xt (alist.mem_lookup_iff.2 (or.inl rfl)),
+      cases vtype.of_ty_determ tτ tτ',
+      exact vok' },
+    { refine IH hf ⟨sd, (list.nodupkeys_cons.1 nd).2⟩ _ al₂,
+      rcases alist.mem_lookup_iff.1 xt with ⟨⟨⟩⟩ | xt,
+      { cases nm ⟨_, hf⟩ },
+      { exact alist.mem_lookup_iff.2 xt } } }
+end
 
 end value
 
@@ -663,7 +709,107 @@ namespace addr
 theorem ok.ref_opt {Γ E σ n τ}
   (h : value.ok Γ E (value.ref n) (vtype.ref τ)) :
   addr_opt.ok Γ E σ (addr.ref <$> n) τ :=
-by cases h; [trivial, exact addr.ok.ref h_a]
+by cases h; cases n; [trivial, exact addr.ok.ref (h_a_1 _ rfl)]
+
+theorem ok.refarr_opt {Γ E σ n τ}
+  (h : value.ok Γ E (value.ref n) (vtype.refarr τ))
+  (a ∈ addr.ref <$> n) : ∃ i, addr.ok Γ E σ a (vtype.arr τ i) :=
+begin
+  cases n; cases H; cases h,
+  exact (h_a_1 _ rfl).imp (λ _, addr.ok.ref)
+end
+
+theorem at_head.ok {Γ E τ τs} {R : value → value → Prop}
+  (Rok : ∀ x, value.ok Γ E x τ → ∀ y, R x y → value.ok Γ E y τ)
+  (x) (xok : value.ok Γ E x (vtype.cons τ τs)) (y)
+  (h : value.at_head R x y) : value.ok Γ E y (vtype.cons τ τs) :=
+begin
+  rcases xok with _|_|_|_|⟨x, vs, _, _, xok, xsok⟩,
+  rcases h with ⟨x, y, vs, r⟩,
+  exact value.ok.cons (Rok _ xok _ r) xsok
+end
+
+theorem at_tail.ok {Γ E τ τs} {R : value → value → Prop}
+  (Rok : ∀ x, value.ok Γ E x τs → ∀ y, R x y → value.ok Γ E y τs)
+  (x) (xok : value.ok Γ E x (vtype.cons τ τs)) (y)
+  (h : value.at_tail R x y) : value.ok Γ E y (vtype.cons τ τs) :=
+begin
+  rcases xok with _|_|_|_|⟨x, vs, _, _, xok, xsok⟩,
+  rcases h with ⟨x, y, vs, r⟩,
+  exact value.ok.cons xok (Rok _ xsok _ r)
+end
+
+theorem at_nth'.ok {Γ E τ i n} {R : value → value → Prop}
+  (Rok : ∀ x, value.ok Γ E x τ → ∀ y, R x y → value.ok Γ E y τ)
+  (lt : i < n) (x) (xok : value.ok Γ E x (vtype.arr' τ n)) (y)
+  (r : value.at_nth' R i x y) : value.ok Γ E y (vtype.arr' τ n) :=
+begin
+  induction i generalizing n lt x xok y,
+  { cases n, {cases lt},
+    exact at_head.ok Rok _ xok _ r },
+  { cases n, {cases lt},
+    refine at_tail.ok _ _ xok _ r,
+    exact i_ih (nat.lt_of_succ_lt_succ lt) }
+end
+
+theorem at_nth.ok {Γ E τ i n} {R : value → value → Prop}
+  (Rok : ∀ x, value.ok Γ E x τ → ∀ y, R x y → value.ok Γ E y τ)
+  (lt : i < n) (x) (xok : value.ok Γ E x (vtype.arr τ n)) (y)
+  (h : value.at_nth R i x y) : value.ok Γ E y (vtype.arr τ n) :=
+begin
+  rcases xok with _|_|_|_|_|⟨x,_,n,xok'⟩,
+  rcases h with ⟨_, y, _, lt, r⟩,
+  exact value.ok.arr (at_nth'.ok Rok lt _ xok' _ r)
+end
+
+theorem at_field_replace {R : value → value → Prop} {f v₁ v₂ vs}
+  (h : value.at_field R f v₁ v₂) (m : value.to_map v₁ vs) :
+  ∃ x y, value.is_field f v₁ x ∧ R x y ∧ value.to_map v₂ (vs.replace f y) :=
+begin
+  cases h with _ _ n h,
+  induction n generalizing v₁ v₂ vs; cases h; cases m,
+  { cases h_a,
+    refine ⟨_, _, value.is_field.one, h_a_a, _⟩,
+    have := m_a.cons _,
+    rwa ← alist.replace_cons_self at this },
+  { cases h,
+    rcases n_ih m_a h_a_1 with ⟨x, y, hf, r, m'⟩,
+    refine ⟨_, _, hf.cons, r, _⟩,
+    rcases alist.replace_cons_of_ne _ _ with ⟨h', e⟩,
+    rw (_ : alist.replace _ _ _ = _),
+    { exact value.to_map.cons h' m' },
+    { exact e },
+    { rintro rfl,
+      cases m_h (alist.exists_mem_lookup_iff.1
+        ⟨_, (value.is_field_lookup m_a).1 hf⟩) } }
+end
+
+theorem at_field.ok {Γ : ast} (ok : Γ.okind) {E τ f s} {R : value → value → Prop}
+  (Rok : ∀ x, value.ok Γ E x τ → ∀ y, R x y → value.ok Γ E y τ)
+  {sd} (hd : Γ.get_sdef s sd)
+  {t} (ht : t ∈ sd.lookup f) (tτ : vtype.of_ty (exp.type.reg t) τ)
+  (x) (xok : value.ok Γ E x (vtype.struct s)) (y)
+  (h : value.at_field R f x y) : value.ok Γ E y (vtype.struct s) :=
+value.ok_struct_iff.2 begin
+  rcases value.ok_struct_iff.1 xok with ⟨vs, m, al⟩,
+  rcases at_field_replace h m with ⟨y', z, hf, r, m'⟩,
+  have hy := (value.is_field_lookup m).1 hf,
+  refine ⟨_, m', λ sd' hd', _⟩,
+  cases get_sdef_determ ok hd hd',
+  replace al := (list.forall₂_and_left _ _).2 ⟨λ _, id, al sd hd⟩,
+  replace al := list.forall₂_and_right.2 ⟨al, λ _, id⟩,
+  refine list.forall₂.mp_trans _ al (alist.replace_forall₂ _ _ _),
+  rintro _ _ _ ⟨⟨h₁, i, t', v₁, τ', tτ', vok⟩, h₂⟩ ⟨_, _, _, _|⟨_, _, ne⟩⟩,
+  { cases option.mem_unique ht (alist.mem_lookup_iff.2 h₁),
+    cases option.mem_unique hy (alist.mem_lookup_iff.2 h₂),
+    cases vtype.of_ty_determ tτ tτ',
+    exact ⟨⟨_, tτ', Rok _ vok _ r⟩⟩ },
+  { exact ⟨⟨_, tτ', vok⟩⟩ }
+end
+
+theorem eq.ok {Γ E τ v} (vok : value.ok Γ E v τ) :
+  ∀ x, value.ok Γ E x τ → ∀ y, v = y → value.ok Γ E y τ
+| _ _ _ rfl := vok
 
 end addr
 

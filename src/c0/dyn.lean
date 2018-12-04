@@ -32,24 +32,30 @@ end addr
 namespace value
 
 inductive at_head (R : value → value → Prop) : value → value → Prop
-| mk {v v' vs} : R v v' → at_head (cons v vs) (cons v' vs)
+| mk {} {v v' vs} : R v v' → at_head (cons v vs) (cons v' vs)
 
 inductive at_tail (R : value → value → Prop) : value → value → Prop
-| mk {v vs vs'} : R vs vs' → at_tail (cons v vs) (cons v vs')
+| mk {} {v vs vs'} : R vs vs' → at_tail (cons v vs) (cons v vs')
 
 def at_nth' (R : value → value → Prop) : ℕ → value → value → Prop
 | 0 := at_head R
 | (n+1) := at_tail (at_nth' n)
 
 inductive at_nth (R : value → value → Prop) (i : ℕ) : value → value → Prop
-| mk {v v' n} : i < n → at_nth' R i v v' → at_nth (arr n v) (arr n v')
+| mk {} {v v' n} : i < n → at_nth' R i v v' → at_nth (arr n v) (arr n v')
+
+inductive at_name (R : value → value → Prop) (f : ident) : value → value → Prop
+| mk {} {v v'} : R v v' → at_name (named f v) (named f v')
+
+inductive at_field (R : value → value → Prop) (f : ident) : value → value → Prop
+| mk {} {v v' n} : at_nth' (at_name R f) n v v' → at_field v v'
 
 inductive is_field (f : ident) : value → value → Prop
-| one {v vs} : is_field (cons (named f v) vs) v
+| one {} {v vs} : is_field (cons (named f v) vs) v
 | cons {v' v vs} : is_field vs v → is_field (cons v' vs) v
 
 inductive is_nth : ℕ → value → value → Prop
-| zero {v vs} : is_nth 0 (cons v vs) v
+| zero {} {v vs} : is_nth 0 (cons v vs) v
 | succ {n v vs v'} : is_nth n vs v' → is_nth (n+1) (cons v vs) v'
 
 open sum
@@ -116,7 +122,7 @@ inductive get (h : heap) (η : vars) : addr → value → Prop
 | head {a v vs} : get a (value.cons v vs) → get (head a) v
 | tail {a v vs} : get a (value.cons v vs) → get (tail a) vs
 | nth {a i n v v'} : get a (value.arr n v) →
-  i < n → value.is_nth i v v' → get (nth a i) v'
+  value.is_nth i v v' → get (nth a i) v'
 | field {a f v' v} :
   get a v' → value.is_field f v' v → get (field a f) v
 
@@ -125,8 +131,8 @@ inductive get_len (h : heap) (η : vars) : addr → ℕ → Prop
 
 inductive update (h : heap) (η : vars) :
   (value → value → Prop) → addr → heap → vars → Prop
-| ref {R n h'} : list.update_at R n h h' → update R (ref n) h' η
-| var {R : value → value → Prop} {i x y} :
+| ref {} {R n h'} : list.update_at R n h h' → update R (ref n) h' η
+| var {} {R : value → value → Prop} {i x y} :
   x ∈ η.lookup i → R x y → update R (var i) h (η.replace i y)
 | head {R a h' η'} :
   update (value.at_head R) a h' η' → update R (head a) h' η'
@@ -134,6 +140,8 @@ inductive update (h : heap) (η : vars) :
   update (value.at_tail R) a h' η' → update R (tail a) h' η'
 | nth {R a i h' η'} :
   update (value.at_nth R i) a h' η' → update R (nth a i) h' η'
+| field {R a f h' η'} :
+  update (value.at_field R f) a h' η' → update R (field a f) h' η'
 
 end addr
 

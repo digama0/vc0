@@ -8,7 +8,8 @@ inductive vtype
 | ref : vtype → vtype
 | nil
 | cons : vtype → vtype → vtype
-| arr : vtype → vtype
+| arr : vtype → ℕ → vtype
+| refarr : vtype → vtype
 | struct : ident → vtype
 
 def vtype.arr' (τ : vtype) : ℕ → vtype
@@ -25,7 +26,7 @@ inductive of_ty : ast.exp.type → vtype → Prop
 | ref {τ vτ} : of_ty (reg τ) vτ →
   of_ty (reg $ type.ref τ) (vtype.ref vτ)
 | arr {τ vτ} : of_ty (reg τ) vτ →
-  of_ty (reg $ type.arr τ) (vtype.ref $ vtype.arr vτ)
+  of_ty (reg $ type.arr τ) (vtype.refarr vτ)
 | struct {s} : of_ty (reg $ type.struct s) (struct s)
 | nil {} : of_ty (ls []) nil
 | cons {τ τs vτ vτs} :
@@ -61,12 +62,14 @@ inductive to_map : value → alist ident (λ _, value) → Prop
 inductive ok (Γ : ast) (E : heap_ty) : value → vtype → Prop
 | int {} {n} : ok (int n) vtype.int
 | bool {} {b} : ok (bool b) vtype.bool
-| null {} {τ} : ok (ref none) (vtype.ref τ)
-| ref {} {n τ} : τ ∈ list.nth E n → ok (ref (some n)) (vtype.ref τ)
+| ref {} {a τ} : (∀ n ∈ a, τ ∈ list.nth E n) → ok (ref a) (vtype.ref τ)
 | nil {} : ok nil vtype.nil
 | cons {v₁ v₂ τ₁ τ₂} : ok v₁ τ₁ → ok v₂ τ₂ →
   ok (cons v₁ v₂) (vtype.cons τ₁ τ₂)
-| arr {v τ n} : ok v (vtype.arr' τ n) → ok (arr n v) (vtype.arr τ)
+| arr {v τ n} : ok v (vtype.arr' τ n) → ok (arr n v) (vtype.arr τ n)
+| refarr {} {a τ} :
+  (∀ n ∈ a, ∃ i, vtype.arr τ i ∈ list.nth E n) →
+  ok (ref a) (vtype.refarr τ)
 | struct {v s vs} :
   to_map v vs →
   (∀ sd, Γ.get_sdef s sd → alist.forall₂ (λ _ _ _, true) sd vs) →
@@ -122,7 +125,7 @@ inductive ok (Γ : ast) (E : heap_ty) (σ : vars_ty) : addr → vtype → Prop
 | var {} {i τ} : τ ∈ σ.lookup i → ok (var i) τ
 | head {a τ τs} : ok a (vtype.cons τ τs) → ok (head a) τ
 | tail {a τ τs} : ok a (vtype.cons τ τs) → ok (tail a) τs
-| nth {a i v} : ok a (vtype.arr v) → ok (nth a i) v
+| nth {a i n τ} : i < n → ok a (vtype.arr τ n) → ok (nth a i) τ
 | field {a s f τ sd vτ} :
   Γ.get_sdef s sd → τ ∈ sd.lookup f →
   vtype.of_ty (ast.exp.type.reg τ) vτ →
@@ -205,11 +208,11 @@ inductive cont.ok (Γ : ast) (E : heap_ty) (σ : vars_ty)
   exp.ok Γ Δ e₂ (reg int) →
   exp.use e₂ ⊆ δ →
   cont.ok δ K τ →
-  cont.ok δ (cont.addr_index₁ e₂ K) (vtype.ref (vtype.arr τ))
-| addr_index₂ {δ a τ K} :
-  addr_opt.ok Γ E σ a (vtype.arr τ) →
+  cont.ok δ (cont.addr_index₁ e₂ K) (vtype.refarr τ)
+| addr_index₂ {δ o τ K} :
+  (∀ a ∈ o, ∃ n, addr.ok Γ E σ a (vtype.arr τ n)) →
   cont.ok δ K τ →
-  cont.ok δ (cont.addr_index₂ a K) vtype.int
+  cont.ok δ (cont.addr_index₂ o K) vtype.int
 
 | binop₁ {δ op e₂ τ₁ τ₂ vτ₁ vτ₂ K} :
   binop.ok op τ₁ τ₂ →

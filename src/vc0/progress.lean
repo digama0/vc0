@@ -40,17 +40,78 @@ end
 
 end value
 
-theorem addr.update.progress {H η R a} :
-  ∃ H' η', addr.update H η R a H' η' :=
+namespace addr
+
+theorem update_at.progress {α β} (S : α → β → Prop) {b}
+  {R : α → α → Prop} (hR : ∀ x, S x b → ∃ y, R x y) :
+  ∀ {l₁ l₂}, list.forall₂ S l₁ l₂ → ∀ {n}, b ∈ list.nth l₂ n → ∃ l', list.update_at R n l₁ l'
+| _ _ (@list.forall₂.cons _ _ S a b' l₁ l₂ r h) 0 rfl :=
+  let ⟨y, r⟩ := hR a r in ⟨_, list.update_at.one r⟩
+| _ _ (@list.forall₂.cons _ _ S a b' l₁ l₂ r h) (n+1) h' :=
+  let ⟨l₂, r⟩ := update_at.progress h h' in
+  ⟨_, list.update_at.cons r⟩
+
+theorem at_head.progress {Γ E τ τs}
+  {R : value → value → Prop} (hR : ∀ x, value.ok Γ E x τ → ∃ y, R x y)
+  (x) (xok : value.ok Γ E x (vtype.cons τ τs)) :
+  ∃ y, value.at_head R x y :=
+by cases xok; cases hR _ xok_a with v' h'; exact ⟨_, ⟨h'⟩⟩
+
+theorem at_tail.progress {Γ E τ τs}
+  {R : value → value → Prop} (hR : ∀ x, value.ok Γ E x τs → ∃ y, R x y)
+  (x) (xok : value.ok Γ E x (vtype.cons τ τs)) :
+  ∃ y, value.at_tail R x y :=
+by cases xok; cases hR _ xok_a_1 with v' h'; exact ⟨_, ⟨h'⟩⟩
+
+theorem at_nth'.progress {Γ E τ}
+  {R : value → value → Prop} (hR : ∀ x, value.ok Γ E x τ → ∃ y, R x y) :
+  ∀ {i n}, i < n → ∀ x, value.ok Γ E x (vtype.arr' τ n) →
+  ∃ y, value.at_nth' R i x y
+| 0     (n+1) h := at_head.progress hR
+| (i+1) (n+1) h := at_tail.progress (at_nth'.progress (nat.lt_of_succ_lt_succ h))
+
+theorem at_nth.progress {Γ E τ}
+  {R : value → value → Prop} (hR : ∀ x, value.ok Γ E x τ → ∃ y, R x y)
+  {i n} (lt : i < n) (x) (xok : value.ok Γ E x (vtype.arr τ n)) :
+  ∃ y, value.at_nth R i x y :=
+begin
+  cases xok,
+  cases at_nth'.progress hR lt _ xok_a with y h,
+  exact ⟨_, lt, h⟩
+end
+
+theorem update.progress {Γ E σ H η}
+  (Eok : heap.ok Γ H E) (ηok : vars.ok Γ E η σ)
+  {a τ} (aok : ok Γ E σ a τ)
+  {R : value → value → Prop} (hR : ∀ x, value.ok Γ E x τ → ∃ y, R x y)
+  (Rok : ∀ x, value.ok Γ E x τ → ∀ y, R x y → value.ok Γ E y τ) :
+  ∃ H' η', update H η R a H' η' :=
+begin
+  induction a generalizing τ R; cases aok,
+  { cases update_at.progress _ hR Eok aok_a with H' h,
+    exact ⟨_, _, update.ref h⟩ },
+  { rcases ηok _ _ aok_a with ⟨v, h, vok⟩,
+    cases hR v vok with v' h',
+    exact ⟨_, _, update.var h h'⟩ },
+  { rcases a_ih aok_a_1 (at_head.progress hR) (at_head.ok Rok) with ⟨H', η', h⟩,
+    exact ⟨_, _, update.head h⟩ },
+  { rcases a_ih aok_a_1 (at_tail.progress hR) (at_tail.ok Rok) with ⟨H', η', h⟩,
+    exact ⟨_, _, update.tail h⟩ },
+  { rcases a_ih aok_a_2 (λ v vok, _) (at_nth.ok Rok aok_a_1) with ⟨H', η', h⟩,
+    { exact ⟨_, _, update.nth h⟩ },
+    { cases vok,
+      refine ⟨_, ⟨_, _⟩⟩, } }
+end
+
+theorem get.progress {H η a} :
+  ∃ v, get H η a v :=
 sorry
 
-theorem addr.get.progress {H η a} :
-  ∃ v, addr.get H η a v :=
+theorem get_len.progress {H η a} :
+  ∃ n, get_len H η a n :=
 sorry
 
-theorem addr.get_len.progress {H η a} :
-  ∃ n, addr.get_len H η a n :=
-sorry
+end addr
 
 theorem bounds.progress (n : ℕ) (i:int32) :
   (∃ (j:ℕ), (i:ℤ) = j ∧ j < n) ∨ i < 0 ∨ (n:ℤ) ≤ (i:ℤ) :=

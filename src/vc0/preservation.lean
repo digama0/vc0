@@ -18,7 +18,7 @@ begin
   { exact ⟨_, vtype.of_ty.int, ok.int⟩ },
   { exact ⟨_, vtype.of_ty.bool, ok.bool⟩ },
   { exact ⟨_, vtype.of_ty.ref (vtype.of_ty_fn _).2, ok.null⟩ },
-  { exact ⟨_, vtype.of_ty.arr (vtype.of_ty_fn _).2, ok.null⟩ },
+  { exact ⟨_, vtype.of_ty.arr (vtype.of_ty_fn _).2, ok.null_arr⟩ },
   { rcases h_ih with ⟨vs, vm, al, IH⟩,
     refine ⟨_, vtype.of_ty.struct, ok.struct vm
       (λ sd' h₁, _) (λ sd' x t τ v' h₁ h₂ h₃ h₄, _)⟩;
@@ -58,27 +58,8 @@ end value
 
 namespace addr
 
-theorem at_head.ok {Γ E τ τs} {R : value → value → Prop}
-  (Rok : ∀ x, value.ok Γ E x τ → ∀ y, R x y → value.ok Γ E y τ)
-  (x) (xok : value.ok Γ E x (vtype.cons τ τs)) (y)
-  (h : value.at_head R x y) : value.ok Γ E y (vtype.cons τ τs) :=
-begin
-  rcases xok with _|_|_|_|_|⟨x, vs, _, _, xok, xsok⟩,
-  rcases h with ⟨x, y, vs, r⟩,
-  exact value.ok.cons (Rok _ xok _ r) xsok
-end
-
-theorem at_tail.ok {Γ E τ τs} {R : value → value → Prop}
-  (Rok : ∀ x, value.ok Γ E x τs → ∀ y, R x y → value.ok Γ E y τs)
-  (x) (xok : value.ok Γ E x (vtype.cons τ τs)) (y)
-  (h : value.at_tail R x y) : value.ok Γ E y (vtype.cons τ τs) :=
-begin
-  rcases xok with _|_|_|_|_|⟨x, vs, _, _, xok, xsok⟩,
-  rcases h with ⟨x, y, vs, r⟩,
-  exact value.ok.cons xok (Rok _ xsok _ r)
-end
-
-theorem update.ok {Γ E Δ H σ η} (σok : vars_ty.ok Δ σ)
+theorem update.ok {Γ E Δ H σ η} (ok : ast.okind Γ)
+  (σok : vars_ty.ok Δ σ)
   (Hok : heap.ok Γ H E) (ηok : vars.ok Γ E η σ)
   {R a H' η' τ} (aok : addr.ok Γ E σ a τ)
   (h : update H η R a H' η')
@@ -117,16 +98,10 @@ begin
     exact IH aok (at_tail.ok Rok) },
   case c0.addr.update.nth : R a i H' η' h IH {
     rcases aok with _|_|_|_|⟨_, τ₁, _, aok⟩,
-    apply IH aok,
-    rintro _ (_|_|_|_|_|_|⟨x,_,n,xok⟩) _ ⟨_, y, _, lt, r⟩,
-    apply value.ok.arr,
-    clear h IH a_1 a_2,
-    induction i generalizing x y n,
-    { cases n, {cases lt},
-      exact at_head.ok Rok _ xok _ r },
-    { cases n, {cases lt},
-      refine at_tail.ok _ _ xok _ r,
-      exact λ x xok y, i_ih xok (nat.lt_of_succ_lt_succ lt) } }
+    exact IH aok_a_2 (at_nth.ok Rok aok_a_1) },
+  case c0.addr.update.field : R a f H' η' h IH {
+    rcases aok with _|_|_|_|⟨_, τ₁, _, aok⟩,
+    exact IH aok_a_4 (at_field.ok ok Rok aok_a_1 aok_a_2 aok_a_3) },
 end
 
 theorem get.ok {Γ E Δ H σ η}
@@ -144,9 +119,10 @@ begin
   case c0.addr.get.tail : a v vs h IH {
     rcases aok with _|_|_|⟨_, τ₁, _, aok⟩,
     cases IH aok, exact a_2 },
-  case c0.addr.get.nth : a i n v v' h lt h' IH {
-    rcases aok with _|_|_|_|⟨_, _, _, aok⟩,
-    cases IH aok, exact h'.ok a_1 lt },
+  case c0.addr.get.nth : a i n v v' h h' IH {
+    rcases aok with _|_|_|_|⟨a, _, n', d, lt, aok⟩,
+    rcases IH aok with _|_|_|_|_|⟨_, _, _, vok⟩,
+    exact h'.ok vok lt },
   case c0.addr.get.field : a f v' v h hf IH {
     rcases aok with _|_|_|_|_|⟨_, s, _, t, sd, _, hsd, m, tτ, aok⟩,
     cases IH aok, exact a_3 _ _ _ _ _ hsd m tτ hf }
@@ -301,6 +277,24 @@ begin
   refine state.ok.ret
     ⟨σok, Eok.add (vok.mono EE), ηok.mono EE, Sok.mono EE⟩
     (value.ok.ref _) (Kok.mono EE),
+  rintro _ ⟨⟩,
+  rw list.forall₂_length_eq Eok,
+  apply list.nth_concat_length
+end
+
+theorem step_alloc_arr.ok {Γ E σs Δ σ H S ret η τ n v K s}
+  (σok : vars_ty.ok Δ σ) (Eok : heap.ok Γ H E)
+  (ηok : vars.ok Γ E η σ) (Sok : stack.ok Γ E σs S ret)
+  (vok : value.ok Γ E v (vtype.arr τ n))
+  (Kok : cont.ok' Γ E σ Δ ret K (vtype.refarr τ))
+  (h : step_alloc ⟨H, S, η⟩ v K s) : state.ok Γ s :=
+begin
+  cases h,
+  have EE : E ≤ E.add (vtype.arr τ n) := E.le_add (vtype.arr τ n),
+  refine state.ok.ret
+    ⟨σok, Eok.add (vok.mono EE), ηok.mono EE, Sok.mono EE⟩
+    (value.ok.refarr _) (Kok.mono EE),
+  rintro _ ⟨⟩, existsi n,
   rw list.forall₂_length_eq Eok,
   apply list.nth_concat_length
 end
@@ -379,7 +373,7 @@ begin
     rcases sok with _|_|⟨E, σs, σ, H, η, S, Δ, ret, τ, α, v, K,
       ⟨E, σs, σ, H, η, S, Δ, _, σok, Eok, ηok, Sok⟩,
       vok, _|_|⟨_, _, _, _, aok, t, tτ, Kok⟩⟩,
-    rcases h.ok σok Eok ηok aok (λ _ _ _ e, e ▸ vok) with ⟨Eok', ηok'⟩,
+    rcases h.ok σok Eok ηok aok (addr.eq.ok vok) with ⟨Eok', ηok'⟩,
     exact state.ok.stmt t ⟨σok, Eok', ηok', Sok⟩ tτ
       stmt.ok.nop stmt.init.nop (or.inr Kok) },
   case c0.step.asgn_var₁ : C lv x e K eq {
@@ -643,7 +637,8 @@ begin
     rcases sok with _|_|⟨E, σs, σ, H, η, S, Δ, ret, τ, α, v, K,
       ⟨E, σs, σ, H, η, S, Δ, _, σok, Eok, ηok, Sok⟩,
       vok, Kok⟩, cases Kok, cases Kok_a,
-    exact sa.ok σok Eok ηok Sok (v0.ok' ok _ Kok_a_a).repeat.arr Kok_a_2 },
+    exact step_alloc_arr.ok σok Eok ηok Sok
+      (v0.ok' ok _ Kok_a_a).repeat.arr Kok_a_2 sa },
   case c0.step.alloc_arr_err : C τ i K i0 { apply state.ok.err },
   case c0.step.addr_var : C v K {
     rcases sok with _|⟨E, σs, σ, H, η, S, Δ, ret, τ, α, v, K,
@@ -676,14 +671,17 @@ begin
     rcases sok with _|_|⟨E, σs, σ, H, η, S, Δ, ret, τ, α, v, K,
       ⟨E, σs, σ, H, η, S, Δ, _, σok, Eok, ηok, Sok⟩,
       vok, Kok⟩, cases Kok,
-    refine state.ok.exp ⟨σok, Eok, ηok, Sok⟩ Kok_a_1 ⟨⟩ ⟨_, Kok_a, vtype.of_ty.int⟩
-      (cont.ok.addr_index₂ (addr.ok.ref_opt vok) Kok_a_2) },
+    exact state.ok.exp ⟨σok, Eok, ηok, Sok⟩ Kok_a_1 ⟨⟩
+      ⟨_, Kok_a, vtype.of_ty.int⟩
+      (cont.ok.addr_index₂ (addr.ok.refarr_opt vok) Kok_a_2) },
   case c0.step.addr_index₃ : C a n K i j len e lt {
     rcases sok with _|_|⟨E, σs, σ, H, η, S, Δ, ret, τ, α, v, K,
       ⟨E, σs, σ, H, η, S, Δ, _, σok, Eok, ηok, Sok⟩,
       _, Kok⟩, cases Kok,
-    cases len with _ _ v len,
-    exact state.ok.ret ⟨σok, Eok, ηok, Sok⟩ (addr.ok.nth Kok_a_1) Kok_a_2 },
+    cases len with _ _ v aok,
+    cases Kok_a _ rfl with n h,
+    cases addr.get.ok σok Eok ηok h aok,
+    exact state.ok.ret ⟨σok, Eok, ηok, Sok⟩ (h.nth lt) Kok_a_1 },
   case c0.step.addr_index_err₁ : C i K { apply state.ok.err },
   case c0.step.addr_index_err₂ : C a n K i { apply state.ok.err },
   case c0.step.addr_field₁ : C e f K {
