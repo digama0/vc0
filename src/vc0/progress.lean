@@ -80,9 +80,31 @@ begin
   exact ⟨_, lt, h⟩
 end
 
-theorem update.progress {Γ E σ H η}
+theorem at_field.progress {Γ E τ}
+  {R : value → value → Prop} (hR : ∀ x, value.ok Γ E x τ → ∃ y, R x y)
+  {s sd f} (hd : Γ.get_sdef s sd)
+  {t} (ht : t ∈ sd.lookup f) (tτ : vtype.of_ty (exp.type.reg t) τ)
+  (x) (xok : value.ok Γ E x (vtype.struct s)) :
+  ∃ y, value.at_field R f x y :=
+begin
+  rcases value.ok_struct_iff.1 xok with ⟨vs, m, al⟩,
+  suffices : ∃ n y, value.at_nth' (value.at_name R f) n x y,
+  { rcases this with ⟨n, y, h⟩, exact ⟨y, ⟨h⟩⟩ },
+  replace al := al _ hd, clear xok, revert ht x,
+  refine alist.forall₂.induction al (by rintro ⟨⟩) _,
+  rintro sd vs i t' v' h₁ h₂ ⟨τ', tτ', vok⟩ H IH ht x m,
+  generalize_hyp e : alist.cons vs i v' h₂ = vs' at m,
+  cases m, {cases e},
+  rcases alist.cons_inj e with ⟨⟨⟩, rfl⟩,
+  rcases alist.lookup_cons_iff.1 ht with ⟨⟨⟩⟩ | ht,
+  { cases vtype.of_ty_determ tτ tτ',
+    cases hR _ vok with y r, exact ⟨0, _, ⟨⟨r⟩⟩⟩ },
+  { rcases IH ht _ m_a with ⟨n, y, h⟩, exact ⟨n+1, _, ⟨h⟩⟩ }
+end
+
+theorem update.progress {Γ E σ H η} (ok : ast.okind Γ)
   (Eok : heap.ok Γ H E) (ηok : vars.ok Γ E η σ)
-  {a τ} (aok : ok Γ E σ a τ)
+  {a τ} (aok : addr.ok Γ E σ a τ)
   {R : value → value → Prop} (hR : ∀ x, value.ok Γ E x τ → ∃ y, R x y)
   (Rok : ∀ x, value.ok Γ E x τ → ∀ y, R x y → value.ok Γ E y τ) :
   ∃ H' η', update H η R a H' η' :=
@@ -97,10 +119,11 @@ begin
     exact ⟨_, _, update.head h⟩ },
   { rcases a_ih aok_a_1 (at_tail.progress hR) (at_tail.ok Rok) with ⟨H', η', h⟩,
     exact ⟨_, _, update.tail h⟩ },
-  { rcases a_ih aok_a_2 (λ v vok, _) (at_nth.ok Rok aok_a_1) with ⟨H', η', h⟩,
-    { exact ⟨_, _, update.nth h⟩ },
-    { cases vok,
-      refine ⟨_, ⟨_, _⟩⟩, } }
+  { rcases a_ih aok_a_2 (at_nth.progress hR aok_a_1) (at_nth.ok Rok aok_a_1) with ⟨H', η', h⟩,
+    exact ⟨_, _, update.nth h⟩ },
+  { rcases a_ih aok_a_4 (at_field.progress hR aok_a_1 aok_a_2 aok_a_3)
+      (at_field.ok ok Rok aok_a_1 aok_a_2 aok_a_3) with ⟨H', η', h⟩,
+    exact ⟨_, _, update.field h⟩ }
 end
 
 theorem get.progress {H η a} :

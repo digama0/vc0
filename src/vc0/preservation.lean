@@ -373,7 +373,7 @@ begin
     rcases sok with _|_|⟨E, σs, σ, H, η, S, Δ, ret, τ, α, v, K,
       ⟨E, σs, σ, H, η, S, Δ, _, σok, Eok, ηok, Sok⟩,
       vok, _|_|⟨_, _, _, _, aok, t, tτ, Kok⟩⟩,
-    rcases h.ok σok Eok ηok aok (addr.eq.ok vok) with ⟨Eok', ηok'⟩,
+    rcases h.ok ok.ind σok Eok ηok aok (addr.eq.ok vok) with ⟨Eok', ηok'⟩,
     exact state.ok.stmt t ⟨σok, Eok', ηok', Sok⟩ tτ
       stmt.ok.nop stmt.init.nop (or.inr Kok) },
   case c0.step.asgn_var₁ : C lv x e K eq {
