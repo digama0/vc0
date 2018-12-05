@@ -1,4 +1,4 @@
-import c0.common util.basic
+import c0.common util.basic util.int32
 
 namespace c0
 namespace ast

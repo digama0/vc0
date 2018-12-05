@@ -175,7 +175,17 @@ end addr
 
 theorem bounds.progress (n : ℕ) (i:int32) :
   (∃ (j:ℕ), (i:ℤ) = j ∧ j < n) ∨ i < 0 ∨ (n:ℤ) ≤ (i:ℤ) :=
-sorry
+begin
+  cases lt_or_le (i:ℤ) 0 with h₁,
+  { rw [← int32.coe_zero, int32.coe_lt] at h₁,
+    exact or.inr (or.inl h₁) },
+  cases lt_or_le (i:ℤ) (n:ℤ) with h₂,
+  { cases e : (i:ℤ) with j,
+    { refine or.inl ⟨_, rfl, int.coe_nat_lt.1 (_ : int.of_nat j < _)⟩,
+      rw ← e, exact h₂ },
+    { rw e at h, cases h } },
+  { exact or.inr (or.inr h_1) }
+end
 
 theorem alloc_arr.progress (i:int32) :
   (∃ (j:ℕ), (i:ℤ) = j) ∨ i < 0 :=
