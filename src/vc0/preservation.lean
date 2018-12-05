@@ -104,30 +104,6 @@ begin
     exact IH aok_a_4 (at_field.ok ok Rok aok_a_1 aok_a_2 aok_a_3) },
 end
 
-theorem get.ok {Γ E Δ H σ η}
-  (σok : vars_ty.ok Δ σ) (Hok : heap.ok Γ H E) (ηok : vars.ok Γ E η σ)
-  {v a τ} (aok : addr.ok Γ E σ a τ) (h : get H η a v) : value.ok Γ E v τ :=
-begin
-  induction h generalizing τ,
-  case c0.addr.get.ref : n v h {
-    cases aok, exact list.forall₂.nth Hok h aok_a },
-  case c0.addr.get.var : n v h {
-    cases aok, exact ηok.ok_of_mem aok_a h },
-  case c0.addr.get.head : a v vs h IH {
-    rcases aok with _|_|⟨_, _, τs, aok⟩,
-    cases IH aok, exact a_1 },
-  case c0.addr.get.tail : a v vs h IH {
-    rcases aok with _|_|_|⟨_, τ₁, _, aok⟩,
-    cases IH aok, exact a_2 },
-  case c0.addr.get.nth : a i n v v' h h' IH {
-    rcases aok with _|_|_|_|⟨a, _, n', d, lt, aok⟩,
-    rcases IH aok with _|_|_|_|_|⟨_, _, _, vok⟩,
-    exact h'.ok vok lt },
-  case c0.addr.get.field : a f v' v h hf IH {
-    rcases aok with _|_|_|_|_|⟨_, s, _, t, sd, _, hsd, m, tτ, aok⟩,
-    cases IH aok, exact a_3 _ _ _ _ _ hsd m tτ hf }
-end
-
 end addr
 
 theorem assign.ok {Γ E Δ σ η x v t τ}

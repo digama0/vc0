@@ -115,6 +115,11 @@ lemma forall₂.nth {α β} {R : α → β → Prop} :
 | (a::l₁) (b::l₂) (forall₂.cons hr hrs) _  _  0     rfl rfl := hr
 | (a::l₁) (b::l₂) (forall₂.cons hr hrs) a' b' (n+1) h₁  h₂  := forall₂.nth hrs h₁ h₂
 
+lemma forall₂.nth_right {α β} {R : α → β → Prop} :
+  ∀{l₁ l₂}, forall₂ R l₁ l₂ → ∀ {a n}, a ∈ l₁.nth n → ∃ b ∈ l₂.nth n, R a b
+| (a::l₁) (b::l₂) (forall₂.cons hr hrs) _  0     rfl := ⟨_, rfl, hr⟩
+| (a::l₁) (b::l₂) (forall₂.cons hr hrs) a' (n+1) h₁  := forall₂.nth_right hrs h₁
+
 lemma forall₂_reverse {α β} {R : α → β → Prop} :
   ∀ {l₁ l₂}, forall₂ R (reverse l₁) (reverse l₂) ↔ forall₂ R l₁ l₂ :=
 suffices ∀ {l₁ l₂}, forall₂ R l₁ l₂ → forall₂ R (reverse l₁) (reverse l₂),

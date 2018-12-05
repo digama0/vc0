@@ -811,6 +811,30 @@ theorem eq.ok {Γ E τ v} (vok : value.ok Γ E v τ) :
   ∀ x, value.ok Γ E x τ → ∀ y, v = y → value.ok Γ E y τ
 | _ _ _ rfl := vok
 
+theorem get.ok {Γ E Δ H σ η}
+  (σok : vars_ty.ok Δ σ) (Hok : heap.ok Γ H E) (ηok : vars.ok Γ E η σ)
+  {v a τ} (aok : addr.ok Γ E σ a τ) (h : get H η a v) : value.ok Γ E v τ :=
+begin
+  induction h generalizing τ,
+  case c0.addr.get.ref : n v h {
+    cases aok, exact list.forall₂.nth Hok h aok_a },
+  case c0.addr.get.var : n v h {
+    cases aok, exact ηok.ok_of_mem aok_a h },
+  case c0.addr.get.head : a v vs h IH {
+    rcases aok with _|_|⟨_, _, τs, aok⟩,
+    cases IH aok, exact a_1 },
+  case c0.addr.get.tail : a v vs h IH {
+    rcases aok with _|_|_|⟨_, τ₁, _, aok⟩,
+    cases IH aok, exact a_2 },
+  case c0.addr.get.nth : a i n v v' h h' IH {
+    rcases aok with _|_|_|_|⟨a, _, n', d, lt, aok⟩,
+    rcases IH aok with _|_|_|_|_|⟨_, _, _, vok⟩,
+    exact h'.ok vok lt },
+  case c0.addr.get.field : a f v' v h hf IH {
+    rcases aok with _|_|_|_|_|⟨_, s, _, t, sd, _, hsd, m, tτ, aok⟩,
+    cases IH aok, exact a_3 _ _ _ _ _ hsd m tτ hf }
+end
+
 end addr
 
 theorem stmt_list.ok.eq_none {Γ Δ δ ret}

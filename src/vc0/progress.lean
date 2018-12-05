@@ -126,13 +126,50 @@ begin
     exact ⟨_, _, update.field h⟩ }
 end
 
-theorem get.progress {H η a} :
+theorem get.progress {Γ E σ Δ H η a τ}
+  (Eok : heap.ok Γ H E) (σok : vars_ty.ok Δ σ)
+  (ηok : vars.ok Γ E η σ) (aok : addr.ok Γ E σ a τ) :
   ∃ v, get H η a v :=
-sorry
+begin
+  induction aok,
+  { rcases Eok.flip.nth_right aok_a with ⟨v, h, vok⟩,
+    exact ⟨_, get.ref h⟩ },
+  { rcases ηok _ _ aok_a with ⟨v, h, vok⟩,
+    exact ⟨_, get.var h⟩ },
+  { rcases aok_ih with ⟨v, h⟩,
+    cases get.ok σok Eok ηok aok_a_1 h,
+    exact ⟨_, get.head h⟩ },
+  { rcases aok_ih with ⟨v, h⟩,
+    cases get.ok σok Eok ηok aok_a_1 h,
+    exact ⟨_, get.tail h⟩ },
+  case c0.addr.ok.nth : a i n τ lt aok IH {
+    rcases IH with ⟨_, h⟩,
+    cases get.ok σok Eok ηok aok h,
+    suffices : ∃ v', value.is_nth i v v',
+    { cases this with v' h', exact ⟨v', get.nth h h'⟩ },
+    clear h aok _x,
+    induction i with i IH generalizing n v,
+    { cases n, {cases lt},
+      cases a_1, exact ⟨_, value.is_nth.zero⟩ },
+    { cases n, {cases lt},
+      cases a_1 with _ _ _ _ _ v vs _ _ vok vsok,
+      cases IH (nat.lt_of_succ_lt_succ lt) vsok with v' h',
+      exact ⟨_, value.is_nth.succ h'⟩ } },
+  case c0.addr.ok.field : a s f t sd τ hd hf tτ aok IH {
+    rcases IH with ⟨v, h⟩,
+    rcases value.ok_struct_iff.1 (get.ok σok Eok ηok aok h) with ⟨vs, m, al⟩,
+    rcases (al _ hd).rel_of_lookup_right hf with ⟨v', h', _⟩,
+    exact ⟨v', get.field h ((value.is_field_lookup m).2 h')⟩ }
+end
 
-theorem get_len.progress {H η a} :
-  ∃ n, get_len H η a n :=
-sorry
+theorem get_len.progress {Γ E σ Δ H η a τ n}
+  (Eok : heap.ok Γ H E) (σok : vars_ty.ok Δ σ)
+  (ηok : vars.ok Γ E η σ) (aok : addr.ok Γ E σ a (vtype.arr τ n)) :
+  get_len H η a n :=
+begin
+  cases get.progress Eok σok ηok aok with v h,
+  cases get.ok σok Eok ηok aok h, exact ⟨h⟩
+end
 
 end addr
 
@@ -169,12 +206,14 @@ begin
   { exact ⟨_, step_ret.ret⟩ }
 end
 
-theorem step_deref.progress {C a K} :
-  ∃ s', step_deref C a K s' :=
+theorem step_deref.progress {Γ E σ Δ H S η a τ K}
+  (Eok : heap.ok Γ H E) (σok : vars_ty.ok Δ σ)
+  (ηok : vars.ok Γ E η σ) (aok : addr_opt.ok Γ E σ a τ) :
+  ∃ s', step_deref ⟨H, S, η⟩ a K s' :=
 begin
   cases a,
   { exact ⟨_, step_deref.null⟩ },
-  { cases addr.get.progress with v h,
+  { cases addr.get.progress Eok σok ηok aok with v h,
     exact ⟨_, step_deref.deref h⟩ }
 end
 
@@ -251,10 +290,12 @@ begin
     { exact prog step.asgn₂ },
     { cases Kok_a,
       { exact prog step.asgn_err },
-      { rcases addr.update.progress with ⟨H', η', h⟩,
+      { rcases addr.update.progress ok.ind Eok ηok
+          Kok_a_1 (by exact λ _ _, ⟨a, rfl⟩)
+          (addr.eq.ok aok) with ⟨H', η', h⟩,
         exact prog (step.asgn₃ h) } },
     { exact prog step.asgn_var₂ },
-    { cases step_deref.progress with s' h,
+    { cases step_deref.progress Eok σok ηok aok with s' h,
       exact prog (step.asnop₂ h) },
     { exact prog step.eval₂ },
     { cases aok,
@@ -268,9 +309,10 @@ begin
       { exact prog step.addr_field₂ } },
     { cases aok;
       exact prog step.addr_index₂ },
-    { cases aok, cases Kok_a,
+    { cases aok, cases Kok_o,
       { exact prog step.addr_index_err₁ },
-      { cases addr.get_len.progress with n h,
+      { cases Kok_a _ rfl with n aok,
+        have h := addr.get_len.progress Eok σok ηok aok,
         rcases bounds.progress n aok_1 with ⟨j, h₁, h₂⟩ | h',
         { exact prog (step.addr_index₃ h h₁ h₂) },
         { exact prog (step.addr_index_err₂ h h') } } },
@@ -291,7 +333,7 @@ begin
           (λ ⟨H', v⟩, step.call_extern ext) },
       { cases step_call.progress with η h',
         exact prog (step.call₂ h h') } },
-    { cases step_deref.progress with s' h,
+    { cases step_deref.progress Eok σok ηok aok with s' h,
       exact prog (step.deref' h) },
     { cases aok,
       rcases alloc_arr.progress aok_1 with ⟨j, h⟩ | h,
