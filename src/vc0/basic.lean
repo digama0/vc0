@@ -234,6 +234,23 @@ begin
   { exact ok.alloc_arr H_a H_a_1 H_ih },
 end
 
+theorem uses.mono {R δ δ'} (ss : δ ⊆ δ') : ∀ {e}, uses R δ e → uses R δ' e
+| (int _) h := h
+| (bool _) h := h
+| null h := h
+| (var v) h := ss h
+| (binop _ e₁ e₂) ⟨h₁, h₂⟩ := ⟨h₁.mono, h₂.mono⟩
+| (unop _ e) h := @uses.mono e h
+| (cond c e₁ e₂) ⟨h₁, h₂, h₃⟩ := ⟨h₁.mono, h₂.mono, h₃.mono⟩
+| nil h := h
+| (cons e es) ⟨h₁, h₂⟩ := ⟨h₁.mono, h₂.mono⟩
+| (call f es) ⟨h₁, h₂⟩ := ⟨h₁, h₂.mono⟩
+| (field e f) h := @uses.mono e h
+| (deref e) h := @uses.mono e h
+| (index e₁ e₂) ⟨h₁, h₂⟩ := ⟨h₁.mono, h₂.mono⟩
+| (alloc_ref _) h := h
+| (alloc_arr _ e) h := @uses.mono e h
+
 end exp
 
 theorem lval.ok : ∀ (lv : lval), lv_ok lv.to_exp
@@ -241,6 +258,11 @@ theorem lval.ok : ∀ (lv : lval), lv_ok lv.to_exp
 | (lval.deref e)     := lv_ok.deref
 | (lval.index e₁ e₂) := lv_ok.index
 | (lval.field e f)   := lv_ok.field (lval.ok e)
+
+theorem lval.uses.mono {R δ δ'} (ss : δ ⊆ δ') {lv : lval}
+  (h : lval.uses R δ lv) : lval.uses R δ' lv :=
+by unfold lval.uses at *; cases (lval.is_var lv).is_some;
+   [exact h.mono ss, trivial]
 
 namespace stmt
 
@@ -260,9 +282,9 @@ begin
   { exact ok.seq h_ih_a h_ih_a_1 },
 end
 
-theorem init.subset {Γ Δ ret γ δ s δ'} (ok : stmt.ok Γ ret Δ s)
+theorem init.subset {Γ R Δ ret γ δ s δ'} (ok : stmt.ok Γ ret Δ s)
   (e : Δ.keys.to_finset = γ)
-  (h : init γ δ s δ') (ss : δ ⊆ γ) : δ ⊆ δ' ∧ δ' ⊆ γ :=
+  (h : init R γ δ s δ') (ss : δ ⊆ γ) : δ ⊆ δ' ∧ δ' ⊆ γ :=
 begin
   have lem : ∀ {Δ : ctx} {γ δ δ' : finset ident} {v},
     list.to_finset (alist.keys Δ) = γ → v ∉ Δ →
@@ -295,30 +317,29 @@ begin
     exact ⟨finset.subset.trans l₁ l₂, r₂⟩ }
 end
 
-theorem init.mono {γ δ₁ δ₂ s δ₁'}
-  (h : init γ δ₁ s δ₁') (ss : δ₁ ⊆ δ₂) :
-  ∃ δ₂', δ₁' ⊆ δ₂' ∧ init γ δ₂ s δ₂' :=
+theorem init.mono {R γ δ₁ δ₂ s δ₁'}
+  (h : init R γ δ₁ s δ₁') (ss : δ₁ ⊆ δ₂) :
+  ∃ δ₂', δ₁' ⊆ δ₂' ∧ init R γ δ₂ s δ₂' :=
 begin
-  have sts := @finset.subset.trans,
   induction h generalizing δ₂,
   { rcases h_ih ss with ⟨δ₂', ss', i⟩,
     exact ⟨_, finset.erase_subset_erase _ ss', init.decl i⟩ },
   { rcases h_ih (finset.insert_subset_insert _ ss) with ⟨δ₂', ss', i⟩,
     exact ⟨_, finset.erase_subset_erase _ ss',
-      init.decl_asgn (sts h_a ss) i⟩ },
+      init.decl_asgn (h_a.mono ss) i⟩ },
   { rcases h_ih_a ss with ⟨δ₃, ss₁, i₁⟩,
     rcases h_ih_a_1 ss with ⟨δ₄, ss₂, i₂⟩,
     exact ⟨_, finset.inter_subset_inter ss₁ ss₂,
-      init.If (sts h_a ss) i₁ i₂⟩ },
+      init.If (h_a.mono ss) i₁ i₂⟩ },
   { rcases h_ih ss with ⟨δ', ss', i⟩,
-    exact ⟨_, ss, init.while (sts h_a ss) i⟩ },
-  { refine ⟨_, _, init.asgn (sts h_a ss) (sts h_a_1 ss)⟩,
+    exact ⟨_, ss, init.while (h_a.mono ss) i⟩ },
+  { refine ⟨_, _, init.asgn (h_a.mono ss) (h_a_1.mono ss)⟩,
     cases h_lv; try {exact ss},
     exact finset.insert_subset_insert _ ss },
-  { exact ⟨_, ss, init.asnop (sts h_a ss) (sts h_a_1 ss)⟩ },
-  { exact ⟨_, ss, init.eval (sts h_a ss)⟩ },
-  { exact ⟨_, ss, init.assert (sts h_a ss)⟩ },
-  { exact ⟨_, λ _, id, init.ret (λ e h, sts (h_a e h) ss)⟩ },
+  { exact ⟨_, ss, init.asnop (h_a.mono ss) (h_a_1.mono ss)⟩ },
+  { exact ⟨_, ss, init.eval (h_a.mono ss)⟩ },
+  { exact ⟨_, ss, init.assert (h_a.mono ss)⟩ },
+  { exact ⟨_, λ _, id, init.ret (λ e h, (h_a e h).mono ss)⟩ },
   { exact ⟨_, ss, init.nop⟩ },
   { rcases h_ih_a ss with ⟨δ₃, ss₁, i₁⟩,
     rcases h_ih_a_1 ss₁ with ⟨δ₄, ss₂, i₂⟩,
@@ -335,8 +356,7 @@ inductive fdecl_ok (Γ : ast) (header xτs ret body) : Prop
   (∀ s ∈ (body : option stmt),
     header = ff ∧
     stmt.ok Γ ret' Δ s ∧
-    (s.returns ∨ ret = none) ∧
-    s.ok_init Δ) →
+    (s.returns ∨ ret = none)) →
   fdecl_ok
 
 theorem fdecl_ok_of_mem {Γ : ast} (ok : Γ.okind)
@@ -350,8 +370,8 @@ begin
       h₂.imp (λ _ _ _ ⟨h₁, h₂⟩, ⟨h₁.weak, h₂⟩),
       h₃.imp (λ _ _ ⟨h₁, h₂⟩, ⟨h₁.weak, h₂⟩),
       λ s hs, _⟩,
-    rcases h₄ s hs with ⟨hs₁, _, hs₂, hs₃, hs₄⟩,
-    exact ⟨hs₁, hs₂, hs₃, hs₄⟩ },
+    rcases h₄ s hs with ⟨hs₁, _, hs₂, hs₃⟩,
+    exact ⟨hs₁, hs₂, hs₃⟩ },
   { cases IH m with Δ ret' h₁ h₂ h₃ h₄,
     refine ⟨Δ, ret', h₁,
       h₂.imp (λ _ _ _ ⟨h₁, h₂⟩, ⟨h₁.weak, h₂⟩),
@@ -461,7 +481,7 @@ def get_sdef_dec {Γ : ast} (ok : Γ.okind) {s} : decidable (∃ sd, get_sdef Γ
 decidable_of_iff' _ (get_sdef_ex_iff ok)
 
 theorem get_body_ok' {Γ : ast} (ok : Γ.okind) {f τ Δ s} (h : Γ.get_body f τ Δ s) :
-  stmt.ok Γ τ Δ s ∧ (stmt.returns s ∨ τ = none) ∧ stmt.ok_init Δ s :=
+  stmt.ok Γ τ Δ s ∧ (stmt.returns s ∨ τ = none) :=
 begin
   cases h,
   cases fdecl_ok_of_mem ok h_a,
@@ -470,7 +490,7 @@ begin
   have : alist.forall₂ (λ _, eval_ty Γ) (alist.mk' h_xτs h_nd) Δ_1 :=
     a.imp (λ _ _ _, and.left),
   cases ast.eval_ty.determ_alist ok h_a_1 this,
-  refine (a_2 _ rfl).2.imp_right (and.imp_left (or.imp_right _)),
+  refine (a_2 _ rfl).2.imp_right (or.imp_right _),
   rintro rfl, cases a_1, refl
 end
 

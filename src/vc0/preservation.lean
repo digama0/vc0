@@ -5,9 +5,11 @@ namespace c0
 open ast ast.gdecl
 
 theorem start_ok (Γ : ast) (ok : Γ.ok) : ∀ s, start Γ s → state.ok Γ s
-| _ (@start.mk _ s h) :=
-  by rcases get_body_ok' ok.ind h with ⟨h₁, h₂|⟨⟨⟩⟩, _, h₃⟩; exact
-  state.ok.stmt (some type.int) env.ok.empty vtype.of_ty.int h₁ h₃ (or.inl h₂)
+| _ (@start.mk _ s h) := begin
+  rcases get_body_ok' ok.ind h with ⟨h₁, h₂|⟨⟨⟩⟩⟩,
+  rcases ok.ok_init h with ⟨δ, h₃⟩,
+  exact state.ok.stmt (some type.int) env.ok.empty vtype.of_ty.int h₁ h₃ (or.inl h₂)
+end
 
 namespace value
 
@@ -188,7 +190,7 @@ theorem stmt_list.ok.cons_inv {Γ E Δ σ η ret s K}
   (ηok : vars.ok Γ E η σ) : stmt_list.ok Γ ret Δ σ.keys (s :: K) →
   ∃ Δ' σ' δ', vars_ty.ok Δ' σ' ∧ vars.ok Γ E η σ' ∧
     stmt.ok Γ ret Δ' s ∧
-    stmt.init Δ'.keys.to_finset σ'.keys s δ' ∧
+    stmt.init' Γ Δ'.keys.to_finset σ'.keys s δ' ∧
     (stmt.returns s ∨ stmt_list.ok Γ ret Δ' δ' K) :=
 begin
   generalize e : (s :: K : list stmt) = K',
@@ -296,8 +298,8 @@ begin
       tτ, sok, si, Kok⟩, cases si, cases sok,
     refine state.ok.stmt t ⟨σok.weak sok_h, Eok, ηok, Sok⟩ tτ
       (stmt.ok.asgn _ (exp.ok.var Γ alist.lookup_cons_self) sok_a_2.weak' sok_a_1)
-      (ast.stmt.init.asgn (finset.empty_subset _) si_a) (or.inr _),
-    change stmt.init (insert v sok_Δ.keys.to_finset)
+      (ast.stmt.init.asgn ⟨⟩ si_a) (or.inr _),
+    change stmt.init' Γ (insert v sok_Δ.keys.to_finset)
       (insert v sok_σ.keys) s si_δ' at si_a_1,
     rw [← list.cons_to_finset, ← alist.cons_keys] at si_a_1,
     rcases Kok with ⟨⟨⟩⟩|Kok,
@@ -336,7 +338,7 @@ begin
       ⟨E, σs, σ, H, η, S, Δ, _, σok, Eok, ηok, Sok⟩,
       tτ, sok, si, ⟨⟨⟩⟩|Kok⟩, cases si, cases sok,
     rcases vtype.of_ty_fn sok_τ with ⟨vτ, hv⟩,
-    rw [lval.use, eq] at si_a, rw eq at Kok,
+    rw [lval.uses, eq] at si_a, rw eq at Kok,
     exact state.ok.exp ⟨σok, Eok, ηok, Sok⟩ si_a lv.ok ⟨_, sok_a_1, hv⟩
       (cont.ok.asgn₁ _ _ ⟨_, sok_a_2, hv⟩ si_a_1 ⟨t, tτ, Kok⟩) },
   case c0.step.asgn₂ : C a e K {
@@ -465,16 +467,13 @@ begin
     rcases sok with _|⟨E, σs, σ, H, η, S, Δ, ret, τ, α, v, K,
       ⟨E, σs, σ, H, η, S, Δ, _, σok, Eok, ηok, Sok⟩,
       eu, _, ⟨_, _|_|_|⟨_, t, iΔ⟩, tτ⟩, Kok⟩,
-    rcases finmap.exists_mem_lookup_iff.2
-      (finmap.mem_keys.1 $ finset.singleton_subset.1 eu) with ⟨τ', iτ'⟩,
+    rcases finmap.exists_mem_lookup_iff.2 (finmap.mem_keys.1 eu) with ⟨τ', iτ'⟩,
     cases vtype.of_ty_determ tτ (σok.ok_of_mem iτ' iΔ),
     exact state.ok.ret ⟨σok, Eok, ηok, Sok⟩ (ηok.ok_of_mem iτ' H_a) Kok },
   case c0.step.binop₁ : C op e₁ e₂ K {
     rcases sok with _|⟨E, σs, σ, H, η, S, Δ, ret, τ, α, v, K,
       ⟨E, σs, σ, H, η, S, Δ, _, σok, Eok, ηok, Sok⟩,
-      eu, _, ⟨t, eok, tτ⟩, Kok⟩, cases eok,
-    have eu₁ := finset.subset.trans (finset.subset_union_left _ _) eu,
-    have eu₂ := finset.subset.trans (finset.subset_union_right _ _) eu,
+      ⟨eu₁, eu₂⟩, _, ⟨t, eok, tτ⟩, Kok⟩, cases eok,
     rcases vtype.of_ty_fn (exp.type.reg eok_τ₁) with ⟨vτ₁, hv₁⟩,
     exact state.ok.exp ⟨σok, Eok, ηok, Sok⟩ eu₁ ⟨⟩
       ⟨_, eok_a, hv₁⟩ (cont.ok.binop₁ eok_a_2 hv₁ tτ eok_a_1 eu₂ Kok) },
@@ -507,11 +506,7 @@ begin
   case c0.step.cond₁ : C c e₁ e₂ K {
     rcases sok with _|⟨E, σs, σ, H, η, S, Δ, ret, τ, α, v, K,
       ⟨E, σs, σ, H, η, S, Δ, _, σok, Eok, ηok, Sok⟩,
-      eu, _, ⟨t, eok, tτ⟩, Kok⟩, cases eok,
-    have eu₁₂ := finset.subset.trans (finset.subset_union_left _ _) eu,
-    have euc := finset.subset.trans (finset.subset_union_left _ _) eu₁₂,
-    have eu₁ := finset.subset.trans (finset.subset_union_right _ _) eu₁₂,
-    have eu₂ := finset.subset.trans (finset.subset_union_right _ _) eu,
+      ⟨euc, eu₁, eu₂⟩, _, ⟨t, eok, tτ⟩, Kok⟩, cases eok,
     exact state.ok.exp ⟨σok, Eok, ηok, Sok⟩ euc ⟨⟩ ⟨_, eok_a, vtype.of_ty.bool⟩
       (cont.ok.cond ⟨_, eok_a_1, tτ⟩ eu₁ ⟨_, eok_a_2, tτ⟩ eu₂ Kok) },
   case c0.step.cond₂ : C b e₁ e₂ K {
@@ -529,9 +524,7 @@ begin
   case c0.step.cons₁ : C e es K {
     rcases sok with _|⟨E, σs, σ, H, η, S, Δ, ret, τ, α, v, K,
       ⟨E, σs, σ, H, η, S, Δ, _, σok, Eok, ηok, Sok⟩,
-      eu, _, ⟨t, eok, tτ⟩, Kok⟩, cases eok, cases tτ,
-    have eu₁ := finset.subset.trans (finset.subset_union_left _ _) eu,
-    have eu₂ := finset.subset.trans (finset.subset_union_right _ _) eu,
+      ⟨eu₁, eu₂⟩, _, ⟨t, eok, tτ⟩, Kok⟩, cases eok, cases tτ,
     exact state.ok.exp ⟨σok, Eok, ηok, Sok⟩ eu₁ ⟨⟩ ⟨_, eok_a, tτ_a⟩
       (cont.ok.cons₁ ⟨_, eok_a_1, tτ_a_1⟩ eu₂ Kok) },
   case c0.step.cons₂ : C v es K {
@@ -549,27 +542,28 @@ begin
   case c0.step.call₁ : C op e K {
     rcases sok with _|⟨E, σs, σ, H, η, S, Δ, ret, τ, α, v, K,
       ⟨E, σs, σ, H, η, S, Δ, _, σok, Eok, ηok, Sok⟩,
-      eu, _, ⟨t, eok, tτ⟩, Kok⟩, cases eok,
+      ⟨fok, eu⟩, _, ⟨t, eok, tτ⟩, Kok⟩, cases eok,
     rcases vtype.of_ty_fn (exp.type.ls eok_τs) with ⟨vτs, tτs⟩,
     exact state.ok.exp ⟨σok, Eok, ηok, Sok⟩ eu ⟨⟩
-      ⟨_, eok_a_1, tτs⟩ (cont.ok.call eok_a tτ tτs Kok) },
+      ⟨_, eok_a_1, tτs⟩ (cont.ok.call eok_a fok tτ tτs Kok) },
   case c0.step.call₂ : H S η η' f τ Δ' s vs K bok sc {
     rcases sok with _|_|⟨E, σs, σ, H, η, S, Δ, ret, τ, α, v, K,
       ⟨E, σs, σ, H, η, S, Δ, _, σok, Eok, ηok, Sok⟩,
       vok, Kok⟩, cases Kok,
-    cases ok.fdef_uniq _ _ _ bok.get_fdef Kok_a,
-    rcases sc.ok Kok_a_2 vok with ⟨σ', σok', ηok', ss, _⟩,
-    rcases get_body_ok' ok.ind bok with ⟨sok, r, δ, si⟩,
+    cases ok.fdef_uniq bok.get_fdef Kok_a,
+    rcases sc.ok Kok_a_3 vok with ⟨σ', σok', ηok', ss, _⟩,
+    rcases get_body_ok' ok.ind bok with ⟨sok, r⟩,
+    rcases ok.ok_init bok with ⟨δ, si⟩,
     rcases si.mono ss with ⟨δ', ss', si'⟩,
-    exact state.ok.stmt _ ⟨σok', Eok, ηok', Sok.cons σok ηok Kok_a_3⟩
-      Kok_a_1 sok si' (r.imp_right stmt_list.ok.nil) },
+    exact state.ok.stmt _ ⟨σok', Eok, ηok', Sok.cons σok ηok Kok_a_4⟩
+      Kok_a_2 sok si' (r.imp_right stmt_list.ok.nil) },
   case c0.step.call_extern : H S η f vs H' v K ext {
     rcases sok with _|_|⟨E, σs, σ, H, η, S, Δ, ret, τ, α, v, K,
       ⟨E, σs, σ, H, η, S, Δ, _, σok, Eok, ηok, Sok⟩,
       vok, Kok⟩, cases Kok,
-    rcases iok ext Kok_a Kok_a_1 Kok_a_2 Eok vok with ⟨E', EE, Eok', vok'⟩,
+    rcases iok ext Kok_a Kok_a_2 Kok_a_3 Eok vok with ⟨E', EE, Eok', vok'⟩,
     exact state.ok.ret ⟨σok, Eok', ηok.mono EE, Sok.mono EE⟩
-       vok' (Kok_a_3.mono EE) },
+       vok' (Kok_a_4.mono EE) },
   case c0.step.deref : C e K {
     rcases sok with _|⟨E, σs, σ, H, η, S, Δ, ret, τ, α, v, K,
       ⟨E, σs, σ, H, η, S, Δ, _, σok, Eok, ηok, Sok⟩,
@@ -579,9 +573,7 @@ begin
   case c0.step.index : C e n K {
     rcases sok with _|⟨E, σs, σ, H, η, S, Δ, ret, τ, α, v, K,
       ⟨E, σs, σ, H, η, S, Δ, _, σok, Eok, ηok, Sok⟩,
-      eu, _, ⟨t, eok, tτ⟩, Kok⟩, cases eok,
-    have eu₁ := finset.subset.trans (finset.subset_union_left _ _) eu,
-    have eu₂ := finset.subset.trans (finset.subset_union_right _ _) eu,
+      ⟨eu₁, eu₂⟩, _, ⟨t, eok, tτ⟩, Kok⟩, cases eok,
     exact state.ok.exp ⟨σok, Eok, ηok, Sok⟩ eu₁ ⟨⟩ ⟨_, eok_a, tτ.arr⟩
       (cont.ok.addr_index₁ eok_a_1 eu₂ $ cont.ok.deref Kok) },
   case c0.step.field : C e n K {
@@ -620,8 +612,7 @@ begin
     rcases sok with _|⟨E, σs, σ, H, η, S, Δ, ret, τ, α, v, K,
       ⟨E, σs, σ, H, η, S, Δ, _, σok, Eok, ηok, Sok⟩,
       eu, _, ⟨t, eok, tτ⟩, Kok⟩, cases eok,
-    rcases finmap.exists_mem_lookup_iff.2
-      (finmap.mem_keys.1 $ finset.singleton_subset.1 eu) with ⟨τ', vτ'⟩,
+    rcases finmap.exists_mem_lookup_iff.2 (finmap.mem_keys.1 eu) with ⟨τ', vτ'⟩,
     cases vtype.of_ty_determ (σok.ok_of_mem vτ' eok_a) tτ,
     exact state.ok.ret ⟨σok, Eok, ηok, Sok⟩ (addr.ok.var vτ') Kok },
   case c0.step.addr_deref₁ : C e K {
@@ -638,9 +629,7 @@ begin
   case c0.step.addr_index₁ : C e n K {
     rcases sok with _|⟨E, σs, σ, H, η, S, Δ, ret, τ, α, v, K,
       ⟨E, σs, σ, H, η, S, Δ, _, σok, Eok, ηok, Sok⟩,
-      eu, _, ⟨t, eok, tτ⟩, Kok⟩, cases eok,
-    have eu₁ := finset.subset.trans (finset.subset_union_left _ _) eu,
-    have eu₂ := finset.subset.trans (finset.subset_union_right _ _) eu,
+      ⟨eu₁, eu₂⟩, _, ⟨t, eok, tτ⟩, Kok⟩, cases eok,
     exact state.ok.exp ⟨σok, Eok, ηok, Sok⟩ eu₁ ⟨⟩ ⟨_, eok_a, tτ.arr⟩
       (cont.ok.addr_index₁ eok_a_1 eu₂ Kok) },
   case c0.step.addr_index₂ : C a n K {

@@ -92,6 +92,11 @@ list.forall₂ (value.ok Γ E) h E
 def vars.ok (Γ : ast) (E : heap_ty) (η : vars) (σ : vars_ty) : Prop :=
 ∀ i τ, τ ∈ σ.lookup i → ∃ v ∈ η.lookup i, value.ok Γ E v τ
 
+namespace ast
+def exp.uses' (Γ : ast) := exp.uses (ok_func Γ)
+def stmt.init' (Γ : ast) := stmt.init (ok_func Γ)
+end ast
+
 open ast ast.stmt ast.exp ast.exp.type c0.type cont_ty
 
 def exp.ok_vtype (Γ : ast) (Δ : ctx) (e : exp) (vτ : vtype) : Prop :=
@@ -105,11 +110,11 @@ inductive stmt_list.ok (Γ : ast) (ret : option type) : ctx → finset ident →
 | one {} {Δ δ δ' s K} :
   stmt.ok Γ ret Δ s →
   s.returns →
-  s.init Δ.keys.to_finset δ δ' →
+  s.init' Γ Δ.keys.to_finset δ δ' →
   stmt_list.ok Δ δ (s::K)
 | cons {} {Δ δ δ' s K} :
   stmt.ok Γ ret Δ s →
-  s.init Δ.keys.to_finset δ δ' →
+  s.init' Γ Δ.keys.to_finset δ δ' →
   stmt_list.ok Δ δ' K →
   stmt_list.ok Δ δ (s::K)
 | weak {} {Δ δ x τ h K} :
@@ -156,14 +161,14 @@ inductive cont.ok (Γ : ast) (E : heap_ty) (σ : vars_ty)
   (Δ : ctx) (ret : vtype) : finset ident → ∀ {α}, cont α → vtype → Prop
 | If {} {s₁ s₂ δ δ₁ δ₂ K τ} :
   vtype.of_ty (rego τ) ret →
-  stmt.ok Γ τ Δ s₁ → s₁.init Δ.keys.to_finset δ δ₁ →
-  stmt.ok Γ τ Δ s₂ → s₂.init Δ.keys.to_finset δ δ₂ →
+  stmt.ok Γ τ Δ s₁ → s₁.init' Γ Δ.keys.to_finset δ δ₁ →
+  stmt.ok Γ τ Δ s₂ → s₂.init' Γ Δ.keys.to_finset δ δ₂ →
   s₁.returns ∧ s₂.returns ∨ stmt_list.ok Γ τ Δ (δ₁ ∩ δ₂) K →
   cont.ok δ (cont.If s₁ s₂ K) vtype.bool
 
 | asgn₁ {δ e τ K} :
   exp.ok_vtype Γ Δ e τ →
-  exp.use e ⊆ δ →
+  exp.uses' Γ δ e →
   stmt_list.ok_vtype Γ ret Δ δ K →
   cont.ok δ (cont.asgn₁ e K) τ
 | asgn₂ {δ a τ K} :
@@ -181,7 +186,7 @@ inductive cont.ok (Γ : ast) (E : heap_ty) (σ : vars_ty)
   binop.ok_asnop op τ →
   vtype.of_ty (reg τ) vτ →
   exp.ok Γ Δ e (reg τ) →
-  exp.use e ⊆ σ.keys →
+  exp.uses' Γ σ.keys e →
   stmt_list.ok_vtype Γ ret Δ δ K →
   cont.ok δ (cont.asnop op e K) vτ
 
@@ -206,7 +211,7 @@ inductive cont.ok (Γ : ast) (E : heap_ty) (σ : vars_ty)
 
 | addr_index₁ {δ e₂ τ K} :
   exp.ok Γ Δ e₂ (reg int) →
-  exp.use e₂ ⊆ δ →
+  exp.uses' Γ δ e₂ →
   cont.ok δ K τ →
   cont.ok δ (cont.addr_index₁ e₂ K) (vtype.refarr τ)
 | addr_index₂ {δ o τ K} :
@@ -219,7 +224,7 @@ inductive cont.ok (Γ : ast) (E : heap_ty) (σ : vars_ty)
   vtype.of_ty (reg τ₁) vτ₁ →
   vtype.of_ty (reg τ₂) vτ₂ →
   exp.ok Γ Δ e₂ (reg τ₁) →
-  exp.use e₂ ⊆ σ.keys →
+  exp.uses' Γ σ.keys e₂ →
   cont.ok δ K vτ₂ →
   cont.ok δ (cont.binop₁ op e₂ K) vτ₁
 | binop₂ {δ v op τ₁ τ₂ vτ₁ vτ₂ K} :
@@ -238,14 +243,14 @@ inductive cont.ok (Γ : ast) (E : heap_ty) (σ : vars_ty)
   cont.ok δ (cont.unop op K) vτ₁
 
 | cond {δ e₁ e₂ τ K} :
-  exp.ok_vtype Γ Δ e₁ τ → exp.use e₁ ⊆ σ.keys →
-  exp.ok_vtype Γ Δ e₂ τ → exp.use e₂ ⊆ σ.keys →
+  exp.ok_vtype Γ Δ e₁ τ → exp.uses' Γ σ.keys e₁ →
+  exp.ok_vtype Γ Δ e₂ τ → exp.uses' Γ σ.keys e₂ →
   cont.ok δ K τ →
   cont.ok δ (cont.cond e₁ e₂ K) vtype.bool
 
 | cons₁ {δ es τ τs K} :
   exp.ok_vtype Γ Δ es τs →
-  exp.use es ⊆ σ.keys →
+  exp.uses' Γ σ.keys es →
   cont.ok δ K (vtype.cons τ τs) →
   cont.ok δ (cont.cons₁ es K) τ
 | cons₂ {δ v τ τs K} :
@@ -255,6 +260,7 @@ inductive cont.ok (Γ : ast) (E : heap_ty) (σ : vars_ty)
 
 | call {δ f τs τ vτs vτ K} :
   Γ.get_fdef f ⟨τs, τ⟩ →
+  ok_func Γ f →
   vtype.of_ty (rego τ) vτ →
   vtype.of_ty (ls τs) vτs →
   cont.ok δ K vτ →
@@ -303,12 +309,12 @@ inductive state.ok (Γ : ast) : state → Prop
   env.ok Γ ⟨E, σs, σ, Δ⟩ C vτ →
   vtype.of_ty (rego τ) vτ →
   stmt.ok Γ τ Δ s →
-  stmt.init Δ.keys.to_finset σ.keys s δ →
+  stmt.init' Γ Δ.keys.to_finset σ.keys s δ →
   s.returns ∨ stmt_list.ok Γ τ Δ δ K →
   state.ok (state.stmt C s K)
 | exp {E σs σ H η S Δ ret τ e α K} :
   env.ok Γ ⟨E, σs, σ, Δ⟩ ⟨H, S, η⟩ ret →
-  exp.use e ⊆ σ.keys → lv_ok' α e →
+  exp.uses' Γ σ.keys e → lv_ok' α e →
   exp.ok_vtype Γ Δ e τ →
   cont.ok' Γ E σ Δ ret K τ →
   state.ok (state.exp α ⟨H, S, η⟩ e K)

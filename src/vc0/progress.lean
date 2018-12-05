@@ -225,10 +225,6 @@ by cases opok; {
   cases tτ, cases vok,
   exact ⟨_, by constructor⟩ }
 
-theorem fdef.progress {Γ : ast} (f : ident) :
-  Γ.is_extern f ∨ Γ.is_fdef f :=
-sorry
-
 theorem step_call.progress {Γ E Δ f vs ts τs t τ s}
   (ok : ast.ok Γ)
   (fd : get_fdef Γ f ⟨ts, t⟩)
@@ -243,7 +239,7 @@ begin
     unfold alist.forall₂ at hs_a_1,
     rw [alist.mk'_entries, list.forall₂_map_left_iff] at hs_a_1,
     refine hs_a_1.imp _, rintro _ _ ⟨i, t, τ, h⟩, exact h },
-  cases ok.fdef_uniq _ _ _ fd (ast.get_fdef.mk hs_a this hs_a_2),
+  cases ok.fdef_uniq fd (ast.get_fdef.mk hs_a this hs_a_2),
   clear _x this fd hs_a hs_a_1 hs_a_2 hs_nd,
   change Δ.entries.map sigma.snd with Δ.values,
   refine alist.rec' _ (λ Δ x t h IH, _) Δ vs τs vsok tτ; intros vs τs vsok tτ,
@@ -318,8 +314,7 @@ begin
       { exact prog step.int },
       { exact prog step.bool },
       { exact prog step.null },
-      { rcases finmap.exists_mem_lookup_iff.2
-          (finmap.mem_keys.1 $ finset.singleton_subset.1 eu) with ⟨τ', iτ'⟩,
+      { rcases finmap.exists_mem_lookup_iff.2 (finmap.mem_keys.1 eu) with ⟨τ', iτ'⟩,
         rcases ηok _ _ iτ' with ⟨v, h, vok⟩,
         exact prog (step.var h) },
       { exact prog step.binop₁ },
@@ -384,11 +379,11 @@ begin
     { exact prog step.cons₂ },
     { exact prog step.cons₃ },
     { cases Kok,
-      rcases fdef.progress Kok_f with ext | ⟨τ, Δ, s, h⟩,
+      rcases Kok_a_6 with ext | ⟨τ, Δ, s, h⟩,
       { exact progresses.io
           (λ o, state.ret cont_ty.V ⟨o.1, S, η⟩ o.2 Kok_K)
           (λ ⟨H', v⟩, step.call_extern ext) },
-      { cases step_call.progress ok Kok_a_4 h Kok_a_6 aok with η h',
+      { cases step_call.progress ok Kok_a_5 h Kok_a_8 aok with η h',
         exact prog (step.call₂ h h') } },
     { cases step_deref.progress Eok σok ηok aok with s' h,
       exact prog (step.deref' h) },

@@ -456,6 +456,13 @@ theorem singleton_subset {α} {a : α} {s : finset α} :
   singleton a ⊆ s ↔ a ∈ s :=
 by simp [subset_def]; refl
 
+theorem union_subset_iff {α} [decidable_eq α]
+  {s₁ s₂ t : finset α} : s₁ ∪ s₂ ⊆ t ↔ s₁ ⊆ t ∧ s₂ ⊆ t :=
+⟨λ h, ⟨
+  subset.trans (subset_union_left _ _) h,
+  subset.trans (subset_union_right _ _) h⟩,
+λ ⟨h₁, h₂⟩, union_subset h₁ h₂⟩
+
 end finset
 
 namespace finmap

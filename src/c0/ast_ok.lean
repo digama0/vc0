@@ -148,39 +148,22 @@ inductive ok (Γ : ast) (Δ : ctx) : exp → type → Prop
 | alloc_arr {τ τ' e} : eval_ty Γ τ τ' → Γ.sized τ' →
   ok e (reg c0.type.int) → ok (alloc_arr τ e) (reg (arr τ'))
 
-def use : exp → finset ident
-| (int _) := ∅
-| (bool _) := ∅
-| null := ∅
-| (var v) := finset.singleton v
-| (binop _ e₁ e₂) := use e₁ ∪ use e₂
-| (unop _ e) := use e
-| (cond c e₁ e₂) := use c ∪ use e₁ ∪ use e₂
-| nil := ∅
-| (cons e es) := use e ∪ use es
-| (call f es) := use es
-| (field e f) := use e
-| (deref e) := use e
-| (index e₁ e₂) := use e₁ ∪ use e₂
-| (alloc_ref _) := ∅
-| (alloc_arr _ e) := use e
-
-def use_func : exp → finset ident
-| (int _) := ∅
-| (bool _) := ∅
-| null := ∅
-| (var v) := ∅
-| (binop _ e₁ e₂) := use_func e₁ ∪ use_func e₂
-| (unop _ e) := use_func e
-| (cond c e₁ e₂) := use_func c ∪ use_func e₁ ∪ use_func e₂
-| nil := ∅
-| (cons e es) := use_func e ∪ use_func es
-| (call f es) := insert f (use_func es)
-| (field e f) := use_func e
-| (deref e) := use_func e
-| (index e₁ e₂) := use_func e₁ ∪ use_func e₂
-| (alloc_ref _) := ∅
-| (alloc_arr _ e) := use_func e
+def uses (R : ident → Prop) (δ : finset ident) : exp → Prop
+| (int _) := true
+| (bool _) := true
+| null := true
+| (var v) := v ∈ δ
+| (binop _ e₁ e₂) := uses e₁ ∧ uses e₂
+| (unop _ e) := uses e
+| (cond c e₁ e₂) := uses c ∧ uses e₁ ∧ uses e₂
+| nil := true
+| (cons e es) := uses e ∧ uses es
+| (call f es) := R f ∧ uses es
+| (field e f) := uses e
+| (deref e) := uses e
+| (index e₁ e₂) := uses e₁ ∧ uses e₂
+| (alloc_ref _) := true
+| (alloc_arr _ e) := uses e
 
 end exp
 
@@ -190,8 +173,8 @@ def is_var : lval → option ident
 | (lval.var v) := some v
 | _ := none
 
-def use (lv : lval) : finset ident :=
-cond (is_var lv).is_some ∅ lv.to_exp.use
+def uses (R : ident → Prop) (δ : finset ident) (lv : lval) : Prop :=
+cond (is_var lv).is_some true (lv.to_exp.uses R δ)
 
 end lval
 
@@ -225,44 +208,31 @@ inductive ok (Γ : ast) (ret_τ : option c0.type) : ctx → stmt → Prop
 | nop {} {Δ} : ok Δ nop
 | seq {Δ s₁ s₂} : ok Δ s₁ → ok Δ s₂ → ok Δ (seq s₁ s₂)
 
-def use_func : stmt → finset ident
-| (decl _ _ s) := use_func s
-| (decl_asgn _ _ e s) := e.use_func ∪ use_func s
-| (If c s₁ s₂) := c.use_func ∪ use_func s₁ ∪ use_func s₂
-| (while c s) := c.use_func ∪ use_func s
-| (asgn lv e) := lv.to_exp.use_func ∪ e.use_func
-| (asnop lv _ e) := lv.to_exp.use_func ∪ e.use_func
-| (eval e) := e.use_func
-| (assert e) := e.use_func
-| (ret none) := ∅
-| (ret (some e)) := e.use_func
-| nop := ∅
-| (seq s₁ s₂) := use_func s₁ ∪ use_func s₂
-
-inductive init : finset ident → finset ident → stmt → finset ident → Prop
+inductive init (R : ident → Prop) :
+  finset ident → finset ident → stmt → finset ident → Prop
 | decl {v τ s γ δ δ'} :
   init (insert v γ) δ s δ' →
   init γ δ (decl v τ s) (δ'.erase v)
 | decl_asgn {v e τ s γ δ δ'} :
-  exp.use e ⊆ δ →
+  exp.uses R δ e →
   init (insert v γ) (insert v δ) s δ' →
   init γ δ (decl_asgn v τ e s) (δ'.erase v)
 | If {c s₁ s₂ γ δ δ₁ δ₂} :
-  exp.use c ⊆ δ → init γ δ s₁ δ₁ → init γ δ s₂ δ₂ →
+  exp.uses R δ c → init γ δ s₁ δ₁ → init γ δ s₂ δ₂ →
   init γ δ (If c s₁ s₂) (δ₁ ∩ δ₂)
 | while {c s γ δ δ'} :
-  exp.use c ⊆ δ → init γ δ s δ' →
+  exp.uses R δ c → init γ δ s δ' →
   init γ δ (while c s) δ
 | asgn {lv e γ δ} :
-  lval.use lv ⊆ δ → exp.use e ⊆ δ →
+  lval.uses R δ lv → exp.uses R δ e →
   init γ δ (asgn lv e) (option.cases_on lv.is_var δ (λ v, insert v δ))
 | asnop {lv op e γ δ} :
-  (lval.to_exp lv).use ⊆ δ → exp.use e ⊆ δ →
+  (lval.to_exp lv).uses R δ → exp.uses R δ e →
   init γ δ (asnop lv op e) δ
-| eval {e γ δ} : exp.use e ⊆ δ → init γ δ (eval e) δ
-| assert {e γ δ} : exp.use e ⊆ δ → init γ δ (assert e) δ
-| ret {e γ δ} : (∀ e' ∈ e, exp.use e' ⊆ δ) → init γ δ (ret e) γ
-| nop {γ δ} : init γ δ nop δ
+| eval {e γ δ} : exp.uses R δ e → init γ δ (eval e) δ
+| assert {e γ δ} : exp.uses R δ e → init γ δ (assert e) δ
+| ret {e γ δ} : (∀ e' ∈ e, exp.uses R δ e') → init γ δ (ret e) γ
+| nop {} {γ δ} : init γ δ nop δ
 | seq {s₁ s₂ γ δ₁ δ₂ δ₃} :
   init γ δ₁ s₁ δ₂ → init γ δ₂ s₂ δ₃ → init γ δ₁ (seq s₁ s₂) δ₃
 
@@ -274,8 +244,8 @@ inductive returns : stmt → Prop
 | seq_left {s₁ s₂} : returns s₁ → returns (seq s₁ s₂)
 | seq_right {s₁ s₂} : returns s₂ → returns (seq s₁ s₂)
 
-def ok_init (Δ : ctx) (s : stmt) : Prop :=
-let γ := Δ.keys.to_finset in ∃ δ', init γ γ s δ'
+def ok_init (R : ident → Prop) (Δ : ctx) (s : stmt) : Prop :=
+let γ := Δ.keys.to_finset in ∃ δ', init R γ γ s δ'
 
 end stmt
 namespace gdecl
@@ -288,8 +258,7 @@ inductive ok (Γ : ast) : gdecl → Prop
     header = ff ∧
     ¬ is_fdef Γ f ∧
     stmt.ok (fdecl header f xτs ret body :: Γ) ret' Δ s ∧
-    (s.returns ∨ ret = none) ∧
-    s.ok_init Δ) →
+    (s.returns ∨ ret = none)) →
   ok (fdecl header f xτs ret body)
 | typedef (x τ τ') :
   (∀ τ, typedef x τ ∉ Γ) →
@@ -307,13 +276,14 @@ inductive ok' : ast → ast → Prop
 | nil {Γ} : ok' Γ []
 | cons {Γ d ds} : gdecl.ok Γ d → ok' (d :: Γ) ds → ok' Γ (d :: ds)
 
+def ok_func (Γ : ast) (f : ident) := Γ.is_extern f ∨ Γ.is_fdef f
+
 structure ok (Γ : ast) : Prop :=
 (gdecls : ok' [] Γ.reverse)
-(fdef_uniq : ∀ i fd fd', Γ.get_fdef i fd → Γ.get_fdef i fd' → fd = fd')
-(header_no_def : ∀ i, Γ.is_extern i → ¬ Γ.is_fdef i)
-(fdef_tdef : ∀ i fd, Γ.get_fdef i fd → ∀ τ, gdecl.typedef i τ ∉ Γ)
-(use_def : ∀ f τ xτs s, Γ.get_body f τ xτs s → ∀ g ∈ s.use_func,
-  Γ.is_extern g ∨ Γ.is_fdef g)
+(fdef_uniq : ∀ ⦃i fd fd'⦄, Γ.get_fdef i fd → Γ.get_fdef i fd' → fd = fd')
+(header_no_def : ∀ ⦃i⦄, Γ.is_extern i → ¬ Γ.is_fdef i)
+(fdef_tdef : ∀ ⦃i fd⦄, Γ.get_fdef i fd → ∀ τ, gdecl.typedef i τ ∉ Γ)
+(ok_init : ∀ ⦃f τ Δ s⦄, Γ.get_body f τ Δ s → s.ok_init (ok_func Γ) Δ)
 (main : Γ.get_fdef main ⟨[], c0.type.int⟩ ∧ Γ.is_fdef main)
 
 -- The ASTs described here are laid out in reverse order, i.e.
