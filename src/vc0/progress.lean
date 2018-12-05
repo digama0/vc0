@@ -173,39 +173,86 @@ end
 
 end addr
 
-theorem bounds.progress (n : ℕ) (i:int32) :
-  (∃ (j:ℕ), (i:ℤ) = j ∧ j < n) ∨ i < 0 ∨ (n:ℤ) ≤ (i:ℤ) :=
+theorem alloc_arr.progress (i:int32) :
+  (∃ (j:ℕ), (i:ℤ) = j) ∨ i < 0 :=
 begin
   cases lt_or_le (i:ℤ) 0 with h₁,
   { rw [← int32.coe_zero, int32.coe_lt] at h₁,
-    exact or.inr (or.inl h₁) },
-  cases lt_or_le (i:ℤ) (n:ℤ) with h₂,
+    exact or.inr h₁ },
   { cases e : (i:ℤ) with j,
-    { refine or.inl ⟨_, rfl, int.coe_nat_lt.1 (_ : int.of_nat j < _)⟩,
-      rw ← e, exact h₂ },
+    { exact or.inl ⟨_, rfl⟩ },
     { rw e at h, cases h } },
-  { exact or.inr (or.inr h_1) }
 end
 
-theorem alloc_arr.progress (i:int32) :
-  (∃ (j:ℕ), (i:ℤ) = j) ∨ i < 0 :=
-sorry
+theorem bounds.progress (n : ℕ) (i:int32) :
+  (∃ (j:ℕ), (i:ℤ) = j ∧ j < n) ∨ i < 0 ∨ (n:ℤ) ≤ (i:ℤ) :=
+begin
+  rcases alloc_arr.progress i with ⟨j, e⟩ | h,
+  { cases lt_or_le (i:ℤ) (n:ℤ) with h₂,
+    { refine or.inl ⟨j, e, int.coe_nat_lt.1 _⟩,
+      rw ← e, exact h₂ },
+    { exact or.inr (or.inr h) } },
+  { exact or.inr (or.inl h) }
+end
 
-theorem step_binop.progress {op v₁ v₂} :
+theorem step_binop.progress {Γ E op v₁ v₂ t₁ t₂ τ₁}
+  (opok : binop.ok op t₁ t₂)
+  (tτ₁ : vtype.of_ty (exp.type.reg t₁) τ₁)
+  (vok₁ : value.ok Γ E v₁ τ₁)
+  (vok₂ : value.ok Γ E v₂ τ₁) :
   ∃ v, value.step_binop op v₁ v₂ v :=
-sorry
+begin
+  cases opok,
+  case c0.binop.ok.comp {
+    cases tτ₁, cases vok₁ with n₁, cases vok₂ with n₂,
+    have : ∃ b, value.step_comp opok_1 (value.int n₁) (value.int n₂) b,
+    { cases opok_1; exact ⟨_, by constructor⟩ },
+    cases this with b h,
+    exact ⟨_, value.step_binop.comp h⟩ },
+  case c0.binop.ok.eq { exact ⟨_, by constructor; constructor⟩ },
+  case c0.binop.ok.ne { exact ⟨_, by constructor; constructor⟩ },
+  all_goals {
+    cases tτ₁, cases vok₁, cases vok₂,
+    exact ⟨_, by constructor⟩ }
+end
 
-theorem step_unop.progress {op v} :
+theorem step_unop.progress  {Γ E op v t₁ t₂ τ₁}
+  (opok : unop.ok op t₁ t₂)
+  (tτ : vtype.of_ty (exp.type.reg t₁) τ₁)
+  (vok : value.ok Γ E v τ₁) :
   ∃ v', value.step_unop op v v' :=
-sorry
+by cases opok; {
+  cases tτ, cases vok,
+  exact ⟨_, by constructor⟩ }
 
 theorem fdef.progress {Γ : ast} (f : ident) :
   Γ.is_extern f ∨ Γ.is_fdef f :=
 sorry
 
-theorem step_call.progress {Δ : ctx} {vs} :
+theorem step_call.progress {Γ E Δ f vs ts τs t τ s}
+  (ok : ast.ok Γ)
+  (fd : get_fdef Γ f ⟨ts, t⟩)
+  (hs : get_body Γ f τ Δ s)
+  (tτ : vtype.of_ty (exp.type.ls ts) τs)
+  (vsok : value.ok Γ E vs τs) :
   ∃ η, step_call Δ vs η :=
-sorry
+begin
+  cases hs,
+  have : list.forall₂ (λ (c : ident × ast.type), eval_ty Γ c.2) hs_xτs Δ.values,
+  { rw [alist.values, list.forall₂_map_right_iff],
+    unfold alist.forall₂ at hs_a_1,
+    rw [alist.mk'_entries, list.forall₂_map_left_iff] at hs_a_1,
+    refine hs_a_1.imp _, rintro _ _ ⟨i, t, τ, h⟩, exact h },
+  cases ok.fdef_uniq _ _ _ fd (ast.get_fdef.mk hs_a this hs_a_2),
+  clear _x this fd hs_a hs_a_1 hs_a_2 hs_nd,
+  change Δ.entries.map sigma.snd with Δ.values,
+  refine alist.rec' _ (λ Δ x t h IH, _) Δ vs τs vsok tτ; intros vs τs vsok tτ,
+  { cases tτ, cases vsok,
+    exact ⟨_, by constructor⟩ },
+  { cases tτ, cases vsok,
+    rcases IH _ _ vsok_a_1 tτ_a_1 with ⟨η, h⟩,
+    exact ⟨_, step_call.cons _ h⟩ }
+end
 
 theorem step_ret.progress {Γ E σs H S η τ v}
   (Sok : stack.ok Γ E σs S τ) (vok : value.ok Γ E v τ) :
@@ -327,10 +374,10 @@ begin
         { exact prog (step.addr_index₃ h h₁ h₂) },
         { exact prog (step.addr_index_err₂ h h') } } },
     { exact prog step.binop₂ },
-    { rcases step_binop.progress with ⟨v|err, h⟩,
+    { rcases step_binop.progress Kok_a Kok_a_1 Kok_a_3 aok with ⟨v|err, h⟩,
       { exact prog (step.binop₃ h) },
       { exact prog (step.binop_err h) } },
-    { rcases step_unop.progress with ⟨v, h⟩,
+    { rcases step_unop.progress Kok_a Kok_a_1 aok with ⟨v, h⟩,
       exact prog (step.unop₂ h) },
     { cases aok,
       exact prog step.cond₂ },
@@ -341,7 +388,7 @@ begin
       { exact progresses.io
           (λ o, state.ret cont_ty.V ⟨o.1, S, η⟩ o.2 Kok_K)
           (λ ⟨H', v⟩, step.call_extern ext) },
-      { cases step_call.progress with η h',
+      { cases step_call.progress ok Kok_a_4 h Kok_a_6 aok with η h',
         exact prog (step.call₂ h h') } },
     { cases step_deref.progress Eok σok ηok aok with s' h,
       exact prog (step.deref' h) },
