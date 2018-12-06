@@ -381,6 +381,39 @@ begin
     exact ⟨hs₁, hs₂.weak, hs₃⟩ }
 end
 
+theorem get_fdecl_pairwise {Γ : ast} (ok : Γ.okind) {f} :
+  Γ.pairwise (λ d₁ d₂, ∀ ⦃h₁ h₂ xτs₁ xτs₂ ret₁ ret₂ s₁ s₂⦄,
+    d₁ = fdecl h₁ f xτs₁ ret₁ (some s₁) →
+    d₂ = fdecl h₂ f xτs₂ ret₂ (some s₂) → false) :=
+begin
+  induction ok with d Γ g ok IH; constructor,
+  { rintro _ h h₁ h₂ xτs₁ xτs₂ ret₁ ret₂ s₁ s₂ rfl rfl,
+    -- rcases (get_fdef_ex_iff ok).2 ⟨_, h⟩ with ⟨sd, h'⟩,
+    cases g,
+    cases fdecl_ok_of_mem ok h,
+    cases (g_a_2 _ rfl).2.1 ⟨_, _, _,
+      ⟨h, a.imp (λ _ _ _, and.left), a_1.imp (λ _ _, and.left)⟩⟩ },
+  { exact IH }
+end
+
+theorem ast.get_body.determ {Γ : ast} (ok : Γ.okind) {f τ₁ τ₂ xτs₁ xτs₂ s₁ s₂}
+  (h₁ : get_body Γ f τ₁ xτs₁ s₁) (h₂ : get_body Γ f τ₂ xτs₂ s₂) :
+  (τ₁, xτs₁, s₁) = (τ₂, xτs₂, s₂) :=
+begin
+  have : ∀ (d₁ ∈ Γ) (d₂ ∈ Γ) ⦃h₁ h₂ xτs₁ xτs₂ τ₁ τ₂ s₁ s₂⦄,
+    d₁ = fdecl h₁ f xτs₁ τ₁ (some s₁) →
+    d₂ = fdecl h₂ f xτs₂ τ₂ (some s₂) → (τ₁, xτs₁, s₁) = (τ₂, xτs₂, s₂),
+  { refine list.forall_of_forall_of_pairwise _ _ ((get_fdecl_pairwise ok).imp _),
+    { exact λ x y H h₁ h₂ xτs₁ xτs₂ τ₁ τ₂ s₁ s₂ e₁ e₂, (H e₂ e₁).symm },
+    { rintro _ _ _ _ _ _ _ _ _ _ rfl ⟨⟩, refl }, swap,
+    { rintro a b H _ _ _ _ _ _ _ _ h₁ h₂, cases H h₁ h₂ } },
+  cases h₁, cases h₂,
+  cases this _ h₁_a _ h₂_a rfl rfl,
+  cases ast.eval_ty.determ_alist ok h₁_a_1 h₂_a_1,
+  cases ast.eval_ty.determ_opt ok h₁_a_2 h₂_a_2,
+  refl
+end
+
 theorem lv_ok_of_struct {Γ : ast} {Δ e s} (ok : Γ.okind)
   (eok : exp.ok Γ Δ e (exp.type.reg (c0.type.struct s))) : lv_ok e :=
 begin
