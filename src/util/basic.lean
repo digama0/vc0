@@ -313,6 +313,10 @@ theorem forall₂.imp {α} {β β' : α → Type*}
   {s s'} : forall₂ R s s' → forall₂ S s s' :=
 list.forall₂.imp $ λ a b, sigma.forall₂.imp H
 
+lemma forall₂_same {α} {β : α → Type*} {r : ∀ a, β a → β a → Prop} {s : alist α β}
+  (h : ∀ a (b : β a), sigma.mk a b ∈ s.entries → r a b b) : forall₂ r s s :=
+forall₂_same $ λ ⟨a, b⟩ m, ⟨h _ _ m⟩
+
 theorem forall₂.flip {α} {β β' : α → Type*}
   {R : ∀ a, β a → β' a → Prop}
   {s s'} (H : forall₂ (λ a, flip (R a)) s s') : forall₂ R s' s :=
@@ -387,6 +391,44 @@ let ⟨b', h'⟩ := exists_mem_lookup_iff.2
 theorem replace_forall₂ {α} {β : α → Type*} [decidable_eq α]
   (a) (b : β a) (s : alist α β) : forall₂ (kreplace_rel a b) s (replace a b s) :=
 kreplace_forall₂ _ _ s.2
+
+def map {α} {β γ : α → Type*}
+  (f : ∀ a, β a → γ a) (s : alist α β) : alist α γ :=
+⟨list.map (sigma.map id f) s.entries, by rw [
+    list.nodupkeys, list.map_map,
+    (by ext ⟨a, b⟩; refl : sigma.fst ∘ sigma.map id f = sigma.fst)];
+  exact s.2⟩
+
+theorem map_entries {α} {β γ : α → Type*}
+  (f : ∀ a, β a → γ a) (s : alist α β) :
+  (map f s).entries = list.map (sigma.map id f) s.entries := rfl
+
+theorem mem_map_entries {α} {β γ : α → Type*}
+  {f : ∀ a, β a → γ a} {s : alist α β} {a} {c : γ a} :
+  sigma.mk a c ∈ (map f s).entries ↔ ∃ b : β a, sigma.mk a b ∈ s.entries ∧ f a b = c :=
+mem_map.trans ⟨
+  by rintro ⟨⟨a, b⟩, h, ⟨⟩⟩; exact ⟨_, h, rfl⟩,
+  by rintro ⟨b, h, ⟨⟩⟩; exact ⟨_, h, rfl⟩⟩
+
+theorem lookup_map {α} {β γ : α → Type*} [decidable_eq α]
+  {f : ∀ a, β a → γ a} {s : alist α β} {a} {c : γ a} :
+  c ∈ (map f s).lookup a ↔ ∃ b : β a, b ∈ s.lookup a ∧ f a b = c :=
+mem_lookup_iff.trans $ mem_map_entries.trans $ by simp only [mem_lookup_iff]
+
+theorem forall₂_map_left_iff {α} {β γ δ : α → Type*}
+  {r : ∀ a, γ a → δ a → Prop} {f : ∀ a, β a → γ a} {l : alist α β} {u : alist α δ} :
+  alist.forall₂ r (alist.map f l) u ↔ alist.forall₂ (λ a c d, r a (f a c) d) l u :=
+begin
+  unfold forall₂, refine list.forall₂_map_left_iff.trans _,
+  apply iff_of_eq, congr', ext ⟨a, b⟩ ⟨a', d⟩,
+  split; rintro ⟨_, _, d, r⟩; exact ⟨r⟩
+end
+
+theorem forall₂_map_right_iff {α} {β γ δ : α → Type*}
+  {r : ∀ a, β a → δ a → Prop} {f : ∀ a, γ a → δ a} {l : alist α β} {u : alist α γ} :
+  alist.forall₂ r l (alist.map f u) ↔ alist.forall₂ (λ a b c, r a b (f a c)) l u :=
+⟨λ h, (forall₂_map_left_iff.1 h.flip).flip,
+ λ h, ((@forall₂_map_left_iff _ _ _ _ (λ a, flip (r a)) _ _ _).2 h.flip).flip⟩
 
 theorem lookup_replace_of_ne {α} {β : α → Type*} [decidable_eq α]
   {a} {b : β a} {s : alist α β} {a'} (ne : a ≠ a'):

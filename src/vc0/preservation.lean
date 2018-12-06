@@ -21,29 +21,20 @@ begin
   { exact ⟨_, vtype.of_ty.bool, ok.bool⟩ },
   { exact ⟨_, vtype.of_ty.ref (vtype.of_ty_fn _).2, ok.null⟩ },
   { exact ⟨_, vtype.of_ty.arr (vtype.of_ty_fn _).2, ok.null_arr⟩ },
-  { rcases h_ih with ⟨vs, vm, al, IH⟩,
-    refine ⟨_, vtype.of_ty.struct, ok.struct vm
-      (λ sd' h₁, _) (λ sd' x t τ v' h₁ h₂ h₃ h₄, _)⟩;
-    cases get_sdef_determ Γok.ind h_a h₁, {exact al},
-    rcases IH h₄ h₂ with ⟨vτ', tτ, vt'⟩,
-    cases vtype.of_ty_determ h₃ tτ,
-    exact vt' },
-  { exact ⟨∅, to_map.nil, list.forall₂.nil, by rintro _ _ _ _ ⟨⟩⟩ },
+  { rcases h_ih with ⟨vs, vm, al'⟩,
+    refine ⟨_, vtype.of_ty.struct, ok.struct
+      (λ sd' τs hd al, value.of_map_ok.2 ⟨_, rfl, _⟩) vm⟩,
+    cases get_sdef_determ Γok.ind h_a hd,
+    refine list.forall₂.mp_trans _ al'.flip al,
+    rintro _ _ _ ⟨i, v, t, τ, tτ, vok⟩ ⟨_, _, τ', tτ'⟩,
+    cases vtype.of_ty_determ tτ tτ',
+    exact ⟨vok⟩ },
+  { exact ⟨∅, rfl, list.forall₂.nil⟩ },
   case c0.value.default.cons : Δ x τ h v vs h₁ h₂ IH₁ IH₂ {
     rcases IH₁ with ⟨τ', tτ₁, vok⟩,
-    rcases IH₂ with ⟨τs', tm, al, IH⟩,
-    have tm' := tm.cons (mt al.mem_iff.2 h),
-    refine ⟨_, tm', al.cons ⟨⟨⟩⟩,
-      λ y yτ v' yf m, _⟩,
-    rcases alist.mem_lookup_iff.1 m with ⟨⟨⟩⟩ | m,
-    { have := (is_field_lookup tm').1 yf,
-      cases option.mem_unique
-        ((is_field_lookup tm').1 yf) alist.lookup_cons_self,
-      exact ⟨_, tτ₁, vok⟩ },
-    { have := alist.mem_lookup_iff.2 m,
-      rcases alist.mem_lookup_iff.1 ((is_field_lookup tm').1 yf) with ⟨⟨⟩⟩ | yf,
-      { cases h ⟨_, m⟩ },
-      exact IH ((is_field_lookup tm).2 (alist.mem_lookup_iff.2 yf)) this } },
+    rcases IH₂ with ⟨τs', rfl, al⟩,
+    exact ⟨_, (of_map_cons (mt al.mem_iff.2 h)).symm,
+      alist.forall₂_cons.2 ⟨⟨_, tτ₁, vok⟩, al⟩⟩ },
 end
 
 theorem default.ok' {Γ : ast} {t τ v} (ok : Γ.ok)

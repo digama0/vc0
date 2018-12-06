@@ -672,6 +672,15 @@ theorem of_ty_eq : ∀ {τ vτ}, of_ty τ vτ → vτ = (of_ty_fn τ).1
 theorem of_ty_determ {τ vτ₁ vτ₂} (h₁ : of_ty τ vτ₁) (h₂ : of_ty τ vτ₂) : vτ₁ = vτ₂ :=
 (of_ty_eq h₁).trans (of_ty_eq h₂).symm
 
+@[simp] theorem of_map_cons {vs x v h} :
+  of_map (alist.cons vs x v h) = cons (named x v) (of_map vs) :=
+alist.rec'_cons _ _ _ _
+
+theorem of_ty_alist (sd) :
+ {τs // alist.forall₂ (λ (_x : ident) (t : type), vtype.of_ty (exp.type.reg t)) sd τs} :=
+⟨alist.map (λ _ τ, (vtype.of_ty_fn (exp.type.reg τ)).1) sd,
+ alist.forall₂_map_right_iff.2 (alist.forall₂_same $ λ _ τ _, (vtype.of_ty_fn _).2)⟩
+
 end vtype
 
 namespace value
@@ -695,64 +704,45 @@ end
 
 def ok_type_or_sdef (Γ E) (v : value) : type ⊕ sdef → Prop
 | (sum.inl τ) := ∃ τ', vtype.of_ty (exp.type.reg τ) τ' ∧ value.ok Γ E v τ'
-| (sum.inr sd) := ∃ vs, to_map v vs ∧
-  alist.forall₂ (λ _ _ _, true) sd vs ∧
-  ∀ ⦃x τ v'⦄, is_field x v v' →
-    τ ∈ sd.lookup x →
-    ∃ vτ, vtype.of_ty (exp.type.reg τ) vτ ∧ value.ok Γ E v' vτ
-
-theorem is_field_lookup {x v vs v'} (h : to_map v vs) :
-  is_field x v v' ↔ v' ∈ vs.lookup x :=
-begin
-  split; intro H,
-  { induction H generalizing vs; cases h,
-    { exact alist.lookup_cons_self },
-    { exact alist.lookup_cons_of_lookup (H_ih h_a) } },
-  { induction h generalizing v', {cases H},
-    rcases alist.lookup_cons_iff.1 H with ⟨⟨⟩⟩ | m,
-    { constructor },
-    { exact is_field.cons (h_ih m) } }
-end
+| (sum.inr sd) := ∃ vs, v = of_map vs ∧
+  alist.forall₂ (λ _ τ v', ∃ vτ, vtype.of_ty (exp.type.reg τ) vτ ∧ value.ok Γ E v' vτ) sd vs
 
 theorem default.weak {Γ d sd v} (h : default Γ sd v) : default (d :: Γ) sd v :=
 by induction h; constructor; try {assumption}; exact h_a.weak
 
-theorem ok_struct_iff {Γ E v s} : ok Γ E v (vtype.struct s) ↔
-  ∃ vs, to_map v vs ∧
-    ∀ sd, get_sdef Γ s sd →
-      alist.forall₂ (λ _ t v,
-        ∃ τ, vtype.of_ty (exp.type.reg t) τ ∧ ok Γ E v τ) sd vs :=
+@[simp] theorem of_map_cons {vs x v} (h) :
+  of_map (alist.cons vs x v h) = cons (named x v) (of_map vs) :=
+alist.rec'_cons _ _ _ _
+
+theorem of_map_inj {vs} : ∀ {vs'}, of_map vs = of_map vs' → vs = vs' :=
 begin
-  split,
-  { rintro (_|_|_|_|_|_|_|⟨_, _, vs, m, h₁, h₂⟩),
-    refine ⟨vs, m, λ sd hd, _⟩,
-    replace h₁ := h₁ sd hd,
-    replace h₂ := λ x t τ v', h₂ sd x t τ v' hd,
-    clear hd,
-    replace h₁ := list.forall₂_and_right.2 ⟨h₁, λ _, id⟩,
-    replace h₁ := (list.forall₂_and_left _ _).2 ⟨λ _, id, h₁⟩,
-    refine h₁.imp _, rintro _ _ ⟨it, ⟨i, t, τ, _⟩, iτ⟩,
-    clear a_1_right_left h₁, refine ⟨_⟩,
-    induction m with _ _ v vs nm m IH generalizing sd; rcases iτ with ⟨⟨⟩⟩ | iτ,
-    { exact ⟨_, (vtype.of_ty_fn _).2, h₂ _ _ _ _
-        (alist.mem_lookup_iff.2 it) (vtype.of_ty_fn _).2 is_field.one⟩ },
-    { exact IH iτ _ (λ x t τ v' xt tτ hf, h₂ _ _ _ _ xt tτ (is_field.cons hf)) it } },
-  { rintro ⟨vs, m, al⟩,
-    refine ok.struct m (λ sd hd, (al sd hd).imp (λ _ _ _ _, trivial))
-      (λ sd x t τ v' hd xt tτ hf, _),
-    replace al := al sd hd, clear hd,
-    replace hf := alist.mem_lookup_iff.1 ((is_field_lookup m).1 hf),
-    induction m with _ _ v vs nm m IH generalizing sd, {cases hf},
-    cases sd with sd nd,
-    rcases al with _|⟨_, _, sd, _, ⟨_, t', _, τ', tτ', vok'⟩, al₂⟩,
-    rcases hf with ⟨⟨⟩⟩ | hf,
-    { cases option.mem_unique xt (alist.mem_lookup_iff.2 (or.inl rfl)),
-      cases vtype.of_ty_determ tτ tτ',
-      exact vok' },
-    { refine IH hf ⟨sd, (list.nodupkeys_cons.1 nd).2⟩ _ al₂,
-      rcases alist.mem_lookup_iff.1 xt with ⟨⟨⟩⟩ | xt,
-      { cases nm ⟨_, hf⟩ },
-      { exact alist.mem_lookup_iff.2 xt } } }
+  refine alist.rec' _ (λ vs x v h IH, _) vs; intro vs';
+    refine alist.rec' _ (λ vs' y v' h' IH', _) vs'; intro e,
+  {refl}, {cases e}, {cases e},
+  rw [of_map_cons, of_map_cons] at e,
+  injection e, cases h_1, cases IH h_2, refl
+end
+
+theorem of_map_ok {Γ E v τs} :
+  ok Γ E v (vtype.of_map τs) ↔
+  ∃ vs, v = of_map vs ∧ alist.forall₂ (λ _, ok Γ E) vs τs :=
+begin
+  refine alist.rec' _ (λ τs x τ h IH, _) τs v; intro vs; split,
+  { rintro ⟨⟩, exact ⟨∅, rfl, by constructor⟩ },
+  { rintro ⟨⟨vs, _⟩, rfl, ⟨⟩⟩, constructor },
+  { intro H, rw vtype.of_map_cons at H,
+    generalize_hyp e₂ : vtype.of_map τs = τ' at H,
+    cases H, cases H_a, subst τ',
+    rcases (IH _).1 H_a_1 with ⟨vs, rfl, al⟩,
+    exact ⟨_, (of_map_cons (mt al.mem_iff.1 h)).symm,
+      alist.forall₂_cons.2 ⟨H_a_a, al⟩⟩ },
+  { rintro ⟨vs, rfl, H⟩,
+    generalize_hyp e : alist.cons τs x τ h = τs' at H, revert e,
+    refine alist.forall₂.induction H (by rintro ⟨⟩) _,
+    intros vs τs x v τ h₁ h₂ vok h _ e,
+    rcases alist.cons_inj e with ⟨⟨⟩, rfl⟩,
+    rw [vtype.of_map_cons, of_map_cons],
+    exact ok.cons (ok.named vok) ((IH _).2 ⟨_, rfl, h⟩) },
 end
 
 end value
@@ -815,49 +805,30 @@ begin
   exact value.ok.arr (at_nth'.ok Rok lt _ xok' _ r)
 end
 
-theorem at_field_replace {R : value → value → Prop} {f v₁ v₂ vs}
-  (h : value.at_field R f v₁ v₂) (m : value.to_map v₁ vs) :
-  ∃ x y, value.is_field f v₁ x ∧ R x y ∧ value.to_map v₂ (vs.replace f y) :=
-begin
-  cases h with _ _ n h,
-  induction n generalizing v₁ v₂ vs; cases h; cases m,
-  { cases h_a,
-    refine ⟨_, _, value.is_field.one, h_a_a, _⟩,
-    have := m_a.cons _,
-    rwa ← alist.replace_cons_self at this },
-  { cases h,
-    rcases n_ih m_a h_a_1 with ⟨x, y, hf, r, m'⟩,
-    refine ⟨_, _, hf.cons, r, _⟩,
-    rcases alist.replace_cons_of_ne _ _ with ⟨h', e⟩,
-    rw (_ : alist.replace _ _ _ = _),
-    { exact value.to_map.cons h' m' },
-    { exact e },
-    { rintro rfl,
-      cases m_h (alist.exists_mem_lookup_iff.1
-        ⟨_, (value.is_field_lookup m_a).1 hf⟩) } }
-end
-
 theorem at_field.ok {Γ : ast} (ok : Γ.okind) {E τ f s} {R : value → value → Prop}
   (Rok : ∀ x, value.ok Γ E x τ → ∀ y, R x y → value.ok Γ E y τ)
   {sd} (hd : Γ.get_sdef s sd)
   {t} (ht : t ∈ sd.lookup f) (tτ : vtype.of_ty (exp.type.reg t) τ)
   (x) (xok : value.ok Γ E x (vtype.struct s)) (y)
   (h : value.at_field R f x y) : value.ok Γ E y (vtype.struct s) :=
-value.ok_struct_iff.2 begin
-  rcases value.ok_struct_iff.1 xok with ⟨vs, m, al⟩,
-  rcases at_field_replace h m with ⟨y', z, hf, r, m'⟩,
-  have hy := (value.is_field_lookup m).1 hf,
-  refine ⟨_, m', λ sd' hd', _⟩,
+begin
+  rcases xok with _|_|_|_|_|_|_|_|⟨_, vs, _, al, e⟩,
+  cases h, cases value.of_map_inj (e.symm.trans h_a_2),
+  refine value.ok.struct (λ sd' τs hd' h, _) h_a_3,
   cases get_sdef_determ ok hd hd',
-  replace al := (list.forall₂_and_left _ _).2 ⟨λ _, id, al sd hd⟩,
-  replace al := list.forall₂_and_right.2 ⟨al, λ _, id⟩,
-  refine list.forall₂.mp_trans _ al (alist.replace_forall₂ _ _ _),
-  rintro _ _ _ ⟨⟨h₁, i, t', v₁, τ', tτ', vok⟩, h₂⟩ ⟨_, _, _, _|⟨_, _, ne⟩⟩,
-  { cases option.mem_unique ht (alist.mem_lookup_iff.2 h₁),
-    cases option.mem_unique hy (alist.mem_lookup_iff.2 h₂),
-    cases vtype.of_ty_determ tτ tτ',
-    exact ⟨⟨_, tτ', Rok _ vok _ r⟩⟩ },
-  { exact ⟨⟨_, tτ', vok⟩⟩ }
+  rcases value.of_map_ok.1 (al sd τs hd h) with ⟨vs', e, al'⟩,
+  cases value.of_map_inj e,
+  rcases alist.forall₂.rel_of_lookup_right h ht with ⟨τ', h', tτ'⟩,
+  cases vtype.of_ty_determ tτ tτ',
+  have al₁ := list.forall₂_and_right.2 ⟨(alist.replace_forall₂ _ _ _).flip, λ _, id⟩,
+  have al₂ := list.forall₂_and_right.2 ⟨al', λ _, id⟩,
+  refine value.of_map_ok.2 ⟨_, rfl, list.forall₂.mp_trans _ al₁ al₂⟩,
+  rintro _ _ _ ⟨⟨x, v', v, h⟩, m₁⟩ ⟨⟨_, _, τ', vok⟩, m₂⟩, refine ⟨_⟩,
+  cases h with _ _ _ h,
+  { cases option.mem_unique h_a_1 (alist.mem_lookup_iff.2 m₁),
+    cases option.mem_unique h' (alist.mem_lookup_iff.2 m₂),
+    exact Rok _ vok _ h_a },
+  { exact vok }
 end
 
 theorem eq.ok {Γ E τ v} (vok : value.ok Γ E v τ) :
@@ -883,9 +854,16 @@ begin
     rcases aok with _|_|_|_|⟨a, _, n', d, lt, aok⟩,
     rcases IH aok with _|_|_|_|_|⟨_, _, _, vok⟩,
     exact h'.ok vok lt },
-  case c0.addr.get.field : a f v' v h hf IH {
+  case c0.addr.get.field : a f vs v h hf IH {
     rcases aok with _|_|_|_|_|⟨_, s, _, t, sd, _, hsd, m, tτ, aok⟩,
-    cases IH aok, exact a_3 _ _ _ _ _ hsd m tτ hf }
+    have := IH aok, generalize_hyp e : value.of_map vs = v' at this,
+    cases this, subst v', cases value.of_map_inj this_a_1,
+    cases vtype.of_ty_alist sd with τs sτ,
+    rcases value.of_map_ok.1 (this_a _ _ hsd sτ) with ⟨vs', e, h⟩,
+    cases value.of_map_inj e,
+    rcases sτ.rel_of_lookup_right m with ⟨τ', m', tτ'⟩,
+    cases vtype.of_ty_determ tτ tτ',
+    exact h.rel_of_lookup hf m' }
 end
 
 end addr

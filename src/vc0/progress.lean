@@ -87,19 +87,15 @@ theorem at_field.progress {Γ E τ}
   (x) (xok : value.ok Γ E x (vtype.struct s)) :
   ∃ y, value.at_field R f x y :=
 begin
-  rcases value.ok_struct_iff.1 xok with ⟨vs, m, al⟩,
-  suffices : ∃ n y, value.at_nth' (value.at_name R f) n x y,
-  { rcases this with ⟨n, y, h⟩, exact ⟨y, ⟨h⟩⟩ },
-  replace al := al _ hd, clear xok, revert ht x,
-  refine alist.forall₂.induction al (by rintro ⟨⟩) _,
-  rintro sd vs i t' v' h₁ h₂ ⟨τ', tτ', vok⟩ H IH ht x m,
-  generalize_hyp e : alist.cons vs i v' h₂ = vs' at m,
-  cases m, {cases e},
-  rcases alist.cons_inj e with ⟨⟨⟩, rfl⟩,
-  rcases alist.lookup_cons_iff.1 ht with ⟨⟨⟩⟩ | ht,
-  { cases vtype.of_ty_determ tτ tτ',
-    cases hR _ vok with y r, exact ⟨0, _, ⟨⟨r⟩⟩⟩ },
-  { rcases IH ht _ m_a with ⟨n, y, h⟩, exact ⟨n+1, _, ⟨h⟩⟩ }
+  rcases xok with _|_|_|_|_|_|_|_|⟨_, vs, rfl, al⟩,
+  cases vtype.of_ty_alist sd with τs sτ,
+  rcases value.of_map_ok.1 (al _ _ hd sτ) with ⟨vs', e, h⟩,
+  cases value.of_map_inj e,
+  rcases sτ.rel_of_lookup_right ht with ⟨τ', hτ, tτ'⟩,
+  cases vtype.of_ty_determ tτ tτ',
+  rcases h.flip.rel_of_lookup_right hτ with ⟨v, m, vok⟩,
+  cases hR _ vok with y r,
+  exact ⟨_, r, m, rfl, rfl⟩
 end
 
 theorem update.progress {Γ E σ H η} (ok : ast.okind Γ)
@@ -157,9 +153,14 @@ begin
       exact ⟨_, value.is_nth.succ h'⟩ } },
   case c0.addr.ok.field : a s f t sd τ hd hf tτ aok IH {
     rcases IH with ⟨v, h⟩,
-    rcases value.ok_struct_iff.1 (get.ok σok Eok ηok aok h) with ⟨vs, m, al⟩,
-    rcases (al _ hd).rel_of_lookup_right hf with ⟨v', h', _⟩,
-    exact ⟨v', get.field h ((value.is_field_lookup m).2 h')⟩ }
+    cases get.ok σok Eok ηok aok h, subst v,
+    cases vtype.of_ty_alist sd with τs sτ,
+    rcases value.of_map_ok.1 (a_1 _ _ hd sτ) with ⟨vs', e, al⟩,
+    cases value.of_map_inj e,
+    rcases sτ.rel_of_lookup_right hf with ⟨τ', hτ, tτ'⟩,
+    cases vtype.of_ty_determ tτ tτ',
+    rcases al.flip.rel_of_lookup_right hτ with ⟨v', h', vok⟩,
+    exact ⟨v', get.field h h'⟩ }
 end
 
 theorem get_len.progress {Γ E σ Δ H η a τ n}

@@ -10,6 +10,7 @@ inductive vtype
 | cons : vtype → vtype → vtype
 | arr : vtype → ℕ → vtype
 | refarr : vtype → vtype
+| named : ident → vtype → vtype
 | struct : ident → vtype
 
 def vtype.arr' (τ : vtype) : ℕ → vtype
@@ -33,6 +34,9 @@ inductive of_ty : ast.exp.type → vtype → Prop
   of_ty (reg τ) vτ → of_ty (ls τs) vτs →
   of_ty (ls (τ :: τs)) (cons vτ vτs)
 
+def of_map (vs : alist ident (λ _, vtype)) : vtype :=
+alist.rec' nil (λ vs x v _, cons (named x v)) vs
+
 end vtype
 
 def heap_ty := list vtype
@@ -54,11 +58,6 @@ instance : partial_order heap_ty :=
 
 namespace value
 
-inductive to_map : value → alist ident (λ _, value) → Prop
-| nil : to_map nil ∅
-| cons {f v vs s} (h) : to_map vs s →
-  to_map (cons (named f v) vs) (s.cons f v h)
-
 inductive ok (Γ : ast) (E : heap_ty) : value → vtype → Prop
 | int {} {n} : ok (int n) vtype.int
 | bool {} {b} : ok (bool b) vtype.bool
@@ -70,14 +69,13 @@ inductive ok (Γ : ast) (E : heap_ty) : value → vtype → Prop
 | refarr {} {a τ} :
   (∀ n ∈ a, ∃ i, vtype.arr τ i ∈ list.nth E n) →
   ok (ref a) (vtype.refarr τ)
-| struct {v s vs} :
-  to_map v vs →
-  (∀ sd, Γ.get_sdef s sd → alist.forall₂ (λ _ _ _, true) sd vs) →
-  (∀ sd x τ vτ v',
+| named {x v τ} : ok v τ → ok (named x v) (vtype.named x τ)
+| struct {s vs v} :
+  (∀ sd τs,
     Γ.get_sdef s sd →
-    τ ∈ sd.lookup x →
-    vtype.of_ty (ast.exp.type.reg τ) vτ →
-    is_field x v v' → ok v' vτ) →
+    alist.forall₂ (λ _ t, vtype.of_ty (ast.exp.type.reg t)) sd τs →
+    ok (of_map vs) (vtype.of_map τs)) →
+  v = of_map vs →
   ok v (vtype.struct s)
 
 def ok_opt (Γ : ast) (E : heap_ty) (v : value) : option vtype → Prop
