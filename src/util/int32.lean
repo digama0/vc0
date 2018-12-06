@@ -42,12 +42,24 @@ by rw [← not_le, coe_le, not_le]
 theorem coe_zero : ((0 : int32) : ℤ) = 0 :=
 by unfold_coes; exact if_pos (nat.pow_pos dec_trivial _)
 
-def div : int32 → int32 → option int32 := sorry
-def mod : int32 → int32 → option int32 := sorry
-def shl : int32 → int32 → option int32 := sorry
-def shr : int32 → int32 → option int32 := sorry
-def bitwise_and : int32 → int32 → int32 := sorry
-def bitwise_xor : int32 → int32 → int32 := sorry
-def bitwise_or : int32 → int32 → int32 := sorry
-def bitwise_not : int32 → int32 := sorry
+def of_int (n : ℤ) : option int32 :=
+if -2^31 ≤ n ∧ n < 2^31 then some n else none
+
+def div (m n : int32) : option int32 :=
+if n = 0 then none else of_int (m / n)
+
+def mod (m n : int32) : option int32 :=
+if n = 0 then none else of_int (m % n)
+
+def shl (m n : int32) : option int32 :=
+if 0 ≤ n ∧ n < 32 then of_int (int.shiftl m n) else none
+
+def shr (m n : int32) : option int32 :=
+if 0 ≤ n ∧ n < 32 then of_int (int.shiftr m n) else none
+
+def bitwise_and (m n : int32) : int32 := int.land m n
+def bitwise_xor (m n : int32) : int32 := int.lxor m n
+def bitwise_or (m n : int32) : int32 := int.lor m n
+def bitwise_not (n : int32) : int32 := int.lnot n
+
 end int32
