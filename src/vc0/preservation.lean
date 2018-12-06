@@ -70,8 +70,8 @@ begin
     { cases m,
       exact list.forall₂.cons (Rok _ v'ok _ r) vsok },
     { exact list.forall₂.cons v'ok (IH _ vsok m) } },
-  case c0.addr.update.var : R i v v' mη r {
-    refine ⟨Hok, λ j τ' τσ, _⟩,
+  case c0.addr.update.var : R i v v' e mη r {
+    refine ⟨Hok, λ j τ' τσ, _⟩, subst e,
     rcases ηok _ _ τσ with ⟨x, xη, xok⟩,
     rcases aok with _|⟨_, _, mσ⟩,
     revert η, refine λ η, finmap.induction_on η (λ η, _), intros,

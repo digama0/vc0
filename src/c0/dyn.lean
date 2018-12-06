@@ -129,8 +129,8 @@ inductive get_len (h : heap) (η : vars) : addr → ℕ → Prop
 inductive update (h : heap) (η : vars) :
   (value → value → Prop) → addr → heap → vars → Prop
 | ref {} {R n h'} : list.update_at R n h h' → update R (ref n) h' η
-| var {} {R : value → value → Prop} {i x y} :
-  x ∈ η.lookup i → R x y → update R (var i) h (η.replace i y)
+| var {} {R : value → value → Prop} {i x y η'} :
+  x ∈ η.lookup i → R x y → η' = η.replace i y → update R (var i) h η'
 | head {R a h' η'} :
   update (value.at_head R) a h' η' → update R (head a) h' η'
 | tail {R a h' η'} :

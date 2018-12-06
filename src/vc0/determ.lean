@@ -3,11 +3,6 @@ import vc0.basic
 namespace c0
 open ast
 
-inductive io_equiv : io → state → io → state → Prop
-| none {s} : io_equiv none s none s
-| some {i o₁ o₂ s₁ s₂} : (o₁ = o₂ → s₁ = s₂) →
-  io_equiv (some (i, o₁)) s₁ (some (i, o₂)) s₂
-
 namespace value
 
 theorem step_comp.determ {op v₁ v₂ b₁ b₂}
@@ -55,8 +50,7 @@ end value
 namespace addr
 
 theorem get.determ {H η a v₁ v₂}
-  (h₁ : get H η a v₁)
-  (h₂ : get H η a v₂) : v₁ = v₂ :=
+  (h₁ : get H η a v₁) (h₂ : get H η a v₂) : v₁ = v₂ :=
 begin
   induction h₁ generalizing v₂; cases h₂,
   { exact option.mem_unique h₁_a h₂_a },
@@ -64,7 +58,8 @@ begin
   { cases h₁_ih h₂_a_1, refl },
   { cases h₁_ih h₂_a_1, refl },
   { cases h₁_ih h₂_a_1, exact h₁_a_2.determ h₂_a_2 },
-  { sorry }
+  { cases value.of_map_inj (h₁_ih h₂_a_1),
+    exact option.mem_unique h₁_a_2 h₂_a_2 }
 end
 
 theorem get_len.determ {H η a v₁ v₂}
@@ -72,11 +67,60 @@ theorem get_len.determ {H η a v₁ v₂}
   (h₂ : get_len H η a v₂) : v₁ = v₂ :=
 by cases h₁; cases h₂; cases h₁_a_1.determ h₂_a_1; refl
 
+theorem update_at.determ
+  {α} {R : α → α → Prop} (Rd : ∀ x y₁ y₂, R x y₁ → R x y₂ → y₁ = y₂) :
+  ∀ {n l l₁ l₂}, list.update_at R n l l₁ → list.update_at R n l l₂ → l₁ = l₂
+| _ _ _ _ (@list.update_at.one _ _ a b l r) (@list.update_at.one _ _ _ b' _ r') :=
+  by rw Rd _ _ _ r r'
+| _ _ _ _ (@list.update_at.cons _ _ n a l r h) (@list.update_at.cons _ _ _ _ _ r' h') :=
+  by rw update_at.determ h h'
+
+theorem at_head.determ
+  {R : value → value → Prop} (Rd : ∀ x y₁ y₂, R x y₁ → R x y₂ → y₁ = y₂)
+  (x y₁ y₂) (h₁ : value.at_head R x y₁) (h₂ : value.at_head R x y₂) : y₁ = y₂ :=
+by cases h₁; cases h₂; rw Rd _ _ _ h₁_a h₂_a
+
+theorem at_tail.determ
+  {R : value → value → Prop} (Rd : ∀ x y₁ y₂, R x y₁ → R x y₂ → y₁ = y₂)
+  (x y₁ y₂) (h₁ : value.at_tail R x y₁) (h₂ : value.at_tail R x y₂) : y₁ = y₂ :=
+by cases h₁; cases h₂; rw Rd _ _ _ h₁_a h₂_a
+
+theorem at_nth'.determ
+  {R : value → value → Prop} (Rd : ∀ x y₁ y₂, R x y₁ → R x y₂ → y₁ = y₂)
+  : ∀ {n} x y₁ y₂, value.at_nth' R n x y₁ → value.at_nth' R n x y₂ → y₁ = y₂
+| 0     := at_head.determ Rd
+| (n+1) := at_tail.determ at_nth'.determ
+
+theorem at_nth.determ
+  {R : value → value → Prop} (Rd : ∀ x y₁ y₂, R x y₁ → R x y₂ → y₁ = y₂)
+  {n} (x y₁ y₂) (h₁ : value.at_nth R n x y₁) (h₂ : value.at_nth R n x y₂) : y₁ = y₂ :=
+by cases h₁; cases h₂; rw at_nth'.determ Rd _ _ _ h₁_a_1 h₂_a_1
+
+theorem at_field.determ
+  {R : value → value → Prop} (Rd : ∀ x y₁ y₂, R x y₁ → R x y₂ → y₁ = y₂)
+  {f} (x y₁ y₂) (h₁ : value.at_field R f x y₁) (h₂ : value.at_field R f x y₂) : y₁ = y₂ :=
+begin
+  rcases h₁ with ⟨_, _, vs, x, y, r, m, e, rfl⟩,
+  rcases h₂ with ⟨_, _, vs', x', y', r', m', e', rfl⟩,
+  cases value.of_map_inj (e.symm.trans e'),
+  cases option.mem_unique m m',
+  rw Rd _ _ _ r r'
+end
+
 theorem update.determ {H η a H₁ η₁ H₂ η₂}
   {R : value → value → Prop} (Rd : ∀ x y₁ y₂, R x y₁ → R x y₂ → y₁ = y₂)
   (h₁ : update H η R a H₁ η₁)
   (h₂ : update H η R a H₂ η₂) : (H₁, η₁) = (H₂, η₂) :=
-sorry
+begin
+  induction h₁ generalizing H₂ η₂; cases h₂,
+  { cases update_at.determ Rd h₁_a h₂_a, refl },
+  { substs h₁_η' η₂, cases option.mem_unique h₁_a h₂_a,
+    cases Rd _ _ _ h₁_a_1 h₂_a_1, refl },
+  { exact h₁_ih (at_head.determ Rd) h₂_a_1 },
+  { exact h₁_ih (at_tail.determ Rd) h₂_a_1 },
+  { exact h₁_ih (at_nth.determ Rd) h₂_a_1 },
+  { exact h₁_ih (at_field.determ Rd) h₂_a_1 }
+end
 
 theorem eq.determ {v : value} (_ : value) : ∀ y₁ y₂, v = y₁ → v = y₂ → y₁ = y₂
 | _ _ rfl h := h
@@ -114,7 +158,11 @@ theorem index_not_lt_zero_or {i : int32} {j n : ℕ}
 | (or.inl h) := index_not_lt_zero e h
 | (or.inr h) := not_lt_of_le h $ by rwa [e, int.coe_nat_lt]
 
-set_option profiler true
+inductive io_equiv : io → state → io → state → Prop
+| none {s} : io_equiv none s none s
+| some {i o₁ o₂ s₁ s₂} : (o₁ = o₂ → s₁ = s₂) →
+  io_equiv (some (i, o₁)) s₁ (some (i, o₂)) s₂
+
 theorem determ {Γ : ast} (ok : Γ.ok) {s o₁ s₁ o₂ s₂}
   (h₁ : step Γ s o₁ s₁) (h₂ : step Γ s o₂ s₂) : io_equiv o₁ s₁ o₂ s₂ :=
 begin

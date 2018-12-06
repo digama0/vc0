@@ -110,7 +110,7 @@ begin
     exact ⟨_, _, update.ref h⟩ },
   { rcases ηok _ _ aok_a with ⟨v, h, vok⟩,
     cases hR v vok with v' h',
-    exact ⟨_, _, update.var h h'⟩ },
+    exact ⟨_, _, update.var h h' rfl⟩ },
   { rcases a_ih aok_a_1 (at_head.progress hR) (at_head.ok Rok) with ⟨H', η', h⟩,
     exact ⟨_, _, update.head h⟩ },
   { rcases a_ih aok_a_1 (at_tail.progress hR) (at_tail.ok Rok) with ⟨H', η', h⟩,
