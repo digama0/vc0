@@ -246,10 +246,12 @@ roption.ext' iff.rfl $ λ h₁ h₂, begin
     exact (trace1.mem_out _).2 ⟨_, e'⟩ },
 end
 
+/-
 theorem trace.eq_of_bisim (R : trace η o → trace η o → Prop)
   (H : ∀ t₁ t₂, R t₁ t₂ → trace1.forall₂ R t₁.destruct t₂.destruct) :
   ∀ t₁ t₂, R t₁ t₂ → t₁ = t₂ :=
 sorry
+-/
 
 end
 
