@@ -58,6 +58,12 @@ def lval.to_exp : lval → exp
 | (lval.index e₁ e₂) := e₁.to_exp.index e₂
 | (lval.field e f) := e.to_exp.field f
 
+instance : has_andthen stmt stmt stmt := ⟨stmt.seq⟩
+
+def exp.of_list : list exp → exp
+| []      := exp.nil
+| (e::es) := exp.cons e (exp.of_list es)
+
 end ast
 
 @[reducible] def ast := list ast.gdecl
