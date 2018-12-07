@@ -554,3 +554,23 @@ to_finset_eq _
 induction_on s $ λ s, by ext; simp
 
 end finmap
+
+def guard_error {ε m} [monad m] [monad_except ε m]
+  (err : thunk ε) (p : Prop) [decidable p] : m unit :=
+if p then return () else throw (err ())
+
+protected def except.catch {ε α} (ma : except ε α) (handle : ε → except ε α) : except ε α :=
+match ma with
+| except.ok a    := except.ok a
+| except.error e := handle e
+end
+
+instance {ε} : monad_except ε (except ε) :=
+{ throw := λ α, except.error,
+  catch := @except.catch ε }
+
+def option.unwrap {ε m} [monad m] [monad_except ε m] (err : thunk ε) {α} : option α → m α
+| (some a) := return a
+| none := throw (err ())
+
+def nat.align_to (n al : ℕ) : ℕ := int.to_nat (-(-n / al) * al)

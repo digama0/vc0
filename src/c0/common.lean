@@ -10,6 +10,7 @@ inductive asize | a8 | a32 | a64
 
 inductive err | arith | mem | abort
 
+@[derive decidable_eq]
 inductive type
 | int | bool
 | ref : type -> type
