@@ -200,7 +200,7 @@ begin
   { exact ok.int },
   { exact ok.bool },
   { exact ok.null },
-  { exact ok.var _ h_a },
+  { exact ok.var h_a },
   { exact ok.binop h_ih_a h_ih_a_1 h_a_2 },
   { exact ok.unop h_ih h_a_1 },
   { exact ok.cond h_ih_a h_ih_a_1 h_ih_a_2 h_a_3 },
@@ -210,7 +210,7 @@ begin
   { exact ok.field h_ih h_a_1.weak h_a_2 },
   { exact ok.deref h_ih h_a_1 },
   { exact ok.index h_ih_a h_ih_a_1 },
-  { exact ok.alloc_ref _ h_a.weak h_a_1.weak },
+  { exact ok.alloc_ref h_a.weak h_a_1.weak },
   { exact ok.alloc_arr h_a.weak h_a_1.weak h_ih },
 end
 
@@ -220,7 +220,7 @@ begin
   { exact ok.int },
   { exact ok.bool },
   { exact ok.null },
-  { exact ok.var _ (alist.lookup_cons_of_lookup H_a) },
+  { exact ok.var (alist.lookup_cons_of_lookup H_a) },
   { exact ok.binop H_ih_a H_ih_a_1 H_a_2 },
   { exact ok.unop H_ih H_a_1 },
   { exact ok.cond H_ih_a H_ih_a_1 H_ih_a_2 H_a_3 },
@@ -230,7 +230,7 @@ begin
   { exact ok.field H_ih H_a_1 H_a_2 },
   { exact ok.deref H_ih H_a_1 },
   { exact ok.index H_ih_a H_ih_a_1 },
-  { exact ok.alloc_ref _ H_a H_a_1 },
+  { exact ok.alloc_ref H_a H_a_1 },
   { exact ok.alloc_arr H_a H_a_1 H_ih },
 end
 
@@ -273,10 +273,10 @@ begin
   { exact ok.decl_asgn h_h h_a.weak h_a_1 h_a_2.weak h_ih },
   { exact ok.If h_a.weak h_ih_a h_ih_a_1 },
   { exact ok.while h_a.weak h_ih },
-  { exact ok.asgn _ h_a.weak h_a_1.weak h_a_2 },
-  { exact ok.asnop _ h_a.weak h_a_1.weak h_a_2 },
-  { exact ok.eval _ h_a.weak h_a_1 },
-  { exact ok.assert _ h_a.weak },
+  { exact ok.asgn h_a.weak h_a_1.weak h_a_2 },
+  { exact ok.asnop h_a.weak h_a_1.weak h_a_2 },
+  { exact ok.eval h_a.weak h_a_1 },
+  { exact ok.assert h_a.weak },
   { exact ok.ret (h_a.imp (λ _ _, exp.ok.weak)) },
   { exact ok.nop },
   { exact ok.seq h_ih_a h_ih_a_1 },
@@ -446,7 +446,7 @@ begin
   rcases IH nd₂ H' with ⟨Δ, h₁, h₂⟩,
   refine ⟨Δ.cons x τ' _, list.forall₂.cons ⟨h⟩ h₁,
     list.forall_mem_cons.2 ⟨hs, h₂⟩⟩,
-  rwa [← h₁.mem_iff, ← alist.mem_keys, alist.mk'_keys]
+  rwa [← h₁.mem_iff, alist.mem_keys, alist.mk'_keys]
 end
 
 theorem sdecl_ok_of_mem {Γ : ast} (ok : Γ.okind) {s xτs} :
@@ -554,7 +554,7 @@ end
 theorem vars_ty.ok.erase {Δ σ x t h}
   (σok : vars_ty.ok (alist.cons Δ x t h) σ) : vars_ty.ok Δ (σ.erase x) :=
 λ x' τ' h, begin
-  rcases finmap.lookup_erase.1 h with ⟨ne, h⟩,
+  rcases finmap.lookup_erase'.1 h with ⟨ne, h⟩,
   rcases σok _ _ h with ⟨t', m, tτ'⟩,
   rcases alist.lookup_cons_iff.1 m with ⟨⟨⟩⟩ | m, {cases ne rfl},
   exact ⟨t', m, tτ'⟩
@@ -584,7 +584,7 @@ end
 
 theorem vars.ok.erase {Γ E σ η x}
   (ηok : vars.ok Γ E η σ) : vars.ok Γ E η (σ.erase x) :=
-λ x' τ' h, ηok _ _ (finmap.lookup_erase.1 h).2
+λ x' τ' h, ηok _ _ (finmap.lookup_erase'.1 h).2
 
 theorem heap_le_nth {E E' : heap_ty} (EE : E ≤ E')
   {i τ} (h : τ ∈ E.nth i) : τ ∈ E'.nth i :=

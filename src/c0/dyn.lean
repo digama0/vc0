@@ -44,7 +44,7 @@ def at_nth' (R : value → value → Prop) : ℕ → value → value → Prop
 inductive at_nth (R : value → value → Prop) (i : ℕ) : value → value → Prop
 | mk {} {v v' n} : i < n → at_nth' R i v v' → at_nth (arr n v) (arr n v')
 
-def of_map (vs : alist ident (λ _, value)) : value :=
+def of_map (vs : alist (λ _: ident, value)) : value :=
 alist.rec' nil (λ vs x v _, cons (named x v)) vs
 
 inductive at_field (R : value → value → Prop) (f : ident) : value → value → Prop
@@ -107,7 +107,7 @@ end value
 
 @[reducible] def heap := list value
 
-@[reducible] def vars := finmap ident (λ _, value)
+@[reducible] def vars := finmap (λ _: ident, value)
 
 instance heap.empty : has_emptyc heap := ⟨[]⟩
 

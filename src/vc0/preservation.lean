@@ -149,7 +149,9 @@ theorem value.step_binop.ok {Γ E op t₁ t₂ τ₁ τ₂ v₁ v₂ v}
   value.ok Γ E v τ₂ :=
 begin
   generalize_hyp e : sum.inl v = o at sok,
-  cases sok; cases opok; try {cases e}; cases tτ₁; cases tτ₂; try {constructor},
+  generalize_hyp e' : op = o' at opok,
+  induction sok; cases opok; cases e'; try {injection e, subst v};
+    cases tτ₁; cases tτ₂; try {constructor},
   all_goals {
     rcases (⟨_, e⟩ : ∃ x, sum.inl v = value.to_err x) with ⟨_|_, ⟨⟩⟩,
     constructor }
@@ -288,7 +290,7 @@ begin
       ⟨E, σs, σ, H, η, S, Δ, _, σok, Eok, ηok, Sok⟩,
       tτ, sok, si, Kok⟩, cases si, cases sok,
     refine state.ok.stmt t ⟨σok.weak sok_h, Eok, ηok, Sok⟩ tτ
-      (stmt.ok.asgn _ (exp.ok.var Γ alist.lookup_cons_self) sok_a_2.weak' sok_a_1)
+      (stmt.ok.asgn (exp.ok.var alist.lookup_cons_self) sok_a_2.weak' sok_a_1)
       (ast.stmt.init.asgn ⟨⟩ si_a) (or.inr _),
     change stmt.init' Γ (insert v sok_Δ.keys.to_finset)
       (insert v sok_σ.keys) s si_δ' at si_a_1,
@@ -331,7 +333,7 @@ begin
     rcases vtype.of_ty_fn sok_τ with ⟨vτ, hv⟩,
     rw [lval.uses, eq] at si_a, rw eq at Kok,
     exact state.ok.exp ⟨σok, Eok, ηok, Sok⟩ si_a lv.ok ⟨_, sok_a_1, hv⟩
-      (cont.ok.asgn₁ _ _ ⟨_, sok_a_2, hv⟩ si_a_1 ⟨t, tτ, Kok⟩) },
+      (cont.ok.asgn₁ ⟨_, sok_a_2, hv⟩ si_a_1 ⟨t, tτ, Kok⟩) },
   case c0.step.asgn₂ : C a e K {
     rcases sok with _|_|⟨E, σs, σ, H, η, S, Δ, ret, τ, α, v, K,
       ⟨E, σs, σ, H, η, S, Δ, _, σok, Eok, ηok, Sok⟩,
@@ -369,7 +371,7 @@ begin
     rcases vtype.of_ty_fn (exp.type.reg τ_1) with ⟨vτ, hv⟩,
     exact state.ok.exp ⟨σok, Eok, ηok, Sok⟩ si_a lv.ok
       ⟨_, a, hv⟩ (cont.ok.asnop a_2 hv a_1 si_a_1 ⟨_, tτ, Kok⟩) },
-  case c0.step.asnop₂ : C a op e K h {
+  case c0.step.asnop₂ : _ C a op e K h {
     rcases sok with _|_|⟨E, σs, σ, H, η, S, Δ, ret, τ, α, v, K,
       ⟨E, σs, σ, H, η, S, Δ, _, σok, Eok, ηok, Sok⟩,
       aok, Kok⟩, cases Kok, cases Kok_a with _ opok,
@@ -382,7 +384,7 @@ begin
       tτ, sok, si, ⟨⟨⟩⟩|Kok⟩, cases si, cases id sok,
     rcases vtype.of_ty_fn τ_1 with ⟨vτ, hv⟩,
     exact state.ok.exp ⟨σok, Eok, ηok, Sok⟩ si_a ⟨⟩
-      ⟨_, a, hv⟩ (cont.ok.eval _ _ ⟨t, tτ, Kok⟩) },
+      ⟨_, a, hv⟩ (cont.ok.eval ⟨t, tτ, Kok⟩) },
   case c0.step.eval₂ : C e K {
     rcases sok with _|_|⟨E, σs, σ, H, η, S, Δ, ret, τ, α, v, K,
       ⟨E, σs, σ, H, η, S, Δ, _, σok, Eok, ηok, Sok⟩,
@@ -394,7 +396,7 @@ begin
       ⟨E, σs, σ, H, η, S, Δ, _, σok, Eok, ηok, Sok⟩,
       tτ, sok, si, ⟨⟨⟩⟩|Kok⟩, cases si, cases id sok,
     exact state.ok.exp ⟨σok, Eok, ηok, Sok⟩ si_a ⟨⟩
-      ⟨_, a, vtype.of_ty.bool⟩ (cont.ok.assert _ _ ⟨t, tτ, Kok⟩) },
+      ⟨_, a, vtype.of_ty.bool⟩ (cont.ok.assert ⟨t, tτ, Kok⟩) },
   case c0.step.assert₂ : C b K {
     rcases sok with _|_|⟨E, σs, σ, H, η, S, Δ, ret, τ, α, v, K,
       ⟨E, σs, σ, H, η, S, Δ, _, σok, Eok, ηok, Sok⟩,
@@ -409,17 +411,17 @@ begin
       tτ, sok, si, Kok⟩, cases si, cases id sok, cases a,
     exact state.ok.exp ⟨σok, Eok, ηok, Sok⟩ (si_a _ rfl) ⟨⟩
       ⟨_, a_a_1, tτ⟩ cont.ok.ret },
-  case c0.step.ret₂ : C v h {
+  case c0.step.ret₂ : _ C v h {
     rcases sok with _|_|⟨E, σs, σ, H, η, S, Δ, ret, τ, α, v, K,
       ⟨E, σs, σ, H, η, S, Δ, _, σok, Eok, ηok, Sok⟩,
       vok, ⟨⟩⟩,
     exact h.ok σok Eok ηok Sok vok },
-  case c0.step.ret_none : C v h {
+  case c0.step.ret_none : _ C v h {
     rcases sok with ⟨_, _, _, _, _, τ, _, _, _, t,
       ⟨E, σs, σ, H, η, S, Δ, _, σok, Eok, ηok, Sok⟩,
       tτ, sok, si, Kok⟩, cases id sok, cases a, cases tτ,
     exact h.ok σok Eok ηok Sok value.ok.nil },
-  case c0.step.nop₁ : C h {
+  case c0.step.nop₁ : _ C h {
     rcases sok with ⟨_, _, _, _, _, τ, _, _, _, t,
       ⟨E, σs, σ, H, η, S, Δ, _, σok, Eok, ηok, Sok⟩,
       tτ, _, si, ⟨⟨⟩⟩|Kok⟩, cases si, cases Kok.eq_none, cases tτ,
@@ -574,12 +576,12 @@ begin
     exact state.ok.exp ⟨σok, Eok, ηok, Sok⟩ eu
       (lv_ok_of_struct ok.ind eok_a) ⟨_, eok_a, vtype.of_ty.struct⟩
       (cont.ok.addr_field eok_a_1 eok_a_2 tτ $ cont.ok.deref Kok) },
-  case c0.step.deref' : C a K sd {
+  case c0.step.deref' : _ C a K sd {
     rcases sok with _|_|⟨E, σs, σ, H, η, S, Δ, ret, τ, α, v, K,
       ⟨E, σs, σ, H, η, S, Δ, _, σok, Eok, ηok, Sok⟩,
       aok, Kok⟩, cases Kok,
     exact sd.ok σok Eok ηok Sok aok Kok_a },
-  case c0.step.alloc_ref : C τ τ' v K ττ' v0 sa {
+  case c0.step.alloc_ref : _ C τ τ' v K ττ' v0 sa {
     rcases sok with _|⟨E, σs, σ, H, η, S, Δ, ret, τ, α, v, K,
       ⟨E, σs, σ, H, η, S, Δ, _, σok, Eok, ηok, Sok⟩,
       eu, _, ⟨t, eok, tτ⟩, Kok⟩, cases eok,
@@ -592,7 +594,7 @@ begin
     cases ast.eval_ty.determ ok.ind ττ' eok_a, cases tτ,
     exact state.ok.exp ⟨σok, Eok, ηok, Sok⟩ eu ⟨⟩ ⟨_, eok_a_2, vtype.of_ty.int⟩
       (cont.ok.alloc_arr tτ eok_a_1 Kok) },
-  case c0.step.alloc_arr₂ : C τ v K i n e v0 sa {
+  case c0.step.alloc_arr₂ : _ C τ v K i n e v0 sa {
     rcases sok with _|_|⟨E, σs, σ, H, η, S, Δ, ret, τ, α, v, K,
       ⟨E, σs, σ, H, η, S, Δ, _, σok, Eok, ηok, Sok⟩,
       vok, Kok⟩, cases Kok, cases Kok_a,

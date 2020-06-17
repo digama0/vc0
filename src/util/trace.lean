@@ -61,7 +61,7 @@ instance trace1.is_lawful_functor : is_lawful_functor (trace1 η o) :=
 { id_map := λ α, roption.map_id' $ by rintro (_|⟨i, g⟩); refl,
   comp_map := λ α β γ g h t, begin
     refine eq.trans _ (roption.map_map _ _ _).symm,
-    simp [(<$>)], congr, ext (_|⟨i, g⟩); refl
+    simp [(<$>)], congr, ext ⟨i, g⟩; refl
   end }
 
 def trace1.pmap {α β} (t : trace1 η o α)

@@ -73,9 +73,6 @@ theorem forall₂.flip {ι} {α α' : ι → Type*}
   ∀ {s s'}, forall₂ (λ i, flip (R i)) s s' → forall₂ R s' s
 | _ _ ⟨r⟩ := ⟨r⟩
 
-theorem eta {α} {β : α → Type*} : ∀ x : Σ a, β a, (⟨x.1, x.2⟩ : Σ a, β a) = x
-| ⟨a, b⟩ := rfl
-
 end sigma
 
 namespace list
@@ -136,11 +133,6 @@ end
 lemma forall₂_concat {α β} {R : α → β → Prop}
   {a b l₁ l₂} : forall₂ R (l₁ ++ [a]) (l₂ ++ [b]) ↔ forall₂ R l₁ l₂ ∧ R a b :=
 by rw ← forall₂_reverse; simp [forall₂_reverse, and_comm]
-
-theorem nth_concat_length {α} : ∀ (l : list α) (a : α),
-  a ∈ list.nth (l ++ [a]) (length l)
-| []       _ := rfl
-| (b :: l) a := nth_concat_length l a
 
 lemma map_prod_fst_eq_of_forall₂_eq {α β γ} {R : β → γ → Prop} {l₁ l₂}
   (h : forall₂ (prod.forall₂ (@eq α) R) l₁ l₂) :
@@ -252,19 +244,19 @@ namespace alist
 open list
 
 theorem mem_lookup_iff {α} {β : α → Type*} [decidable_eq α]
-  {a : α} {b : β a} {s : alist α β} :
+  {a : α} {b : β a} {s : alist β} :
   b ∈ lookup a s ↔ sigma.mk a b ∈ s.entries :=
 list.mem_lookup_iff s.2
 
 theorem exists_mem_lookup_iff {α} {β : α → Type*} [decidable_eq α]
-  {a : α} {s : alist α β} : (∃ b, b ∈ lookup a s) ↔ a ∈ s :=
+  {a : α} {s : alist β} : (∃ b, b ∈ lookup a s) ↔ a ∈ s :=
 option.is_some_iff_exists.symm.trans lookup_is_some
 
 theorem to_sigma_nodupkeys {α β} {l : list (α × β)} :
   (l.map prod.to_sigma).nodupkeys ↔ (l.map prod.fst).nodup :=
-by rw [list.nodupkeys, list.map_map]; refl
+by rw [list.nodupkeys, list.keys, list.map_map]; refl
 
-def mk' {α β} (l : list (α × β)) (h : (l.map prod.fst).nodup) : alist α (λ _, β) :=
+def mk' {α β} (l : list (α × β)) (h : (l.map prod.fst).nodup) : alist (λ _, β) :=
 ⟨l.map prod.to_sigma, to_sigma_nodupkeys.2 h⟩
 
 @[simp] theorem mk'_entries {α β} (l : list (α × β)) (h) :
@@ -272,18 +264,18 @@ def mk' {α β} (l : list (α × β)) (h : (l.map prod.fst).nodup) : alist α (�
 
 @[simp] theorem mk'_keys {α β} (l : list (α × β)) (h) :
   (mk' l h).keys = l.map prod.fst :=
-by rw [keys, mk'_entries, list.map_map]; refl
+by rw [keys, list.keys, mk'_entries, list.map_map]; refl
 
-def cons {α} {β : α → Type*} (s : alist α β)
-  (a : α) (b : β a) (h : a ∉ s) : alist α β :=
+def cons {α} {β : α → Type*} (s : alist β)
+  (a : α) (b : β a) (h : a ∉ s) : alist β :=
 ⟨⟨a, b⟩ :: s.entries, nodup_cons.2 ⟨mt mem_keys.1 h, s.nodupkeys⟩⟩
 
 theorem insert_eq_cons {α} {β : α → Type*} [decidable_eq α]
-  {s : alist α β} {a : α} {b : β a} (h : a ∉ s) : insert a b s = cons s a b h :=
-dif_neg h
+  {s : alist β} {a : α} {b : β a} (h : a ∉ s) : insert a b s = cons s a b h :=
+ext $ by simp only [insert_entries_of_neg h]; refl
 
 theorem cons_inj {α} {β : α → Type*} [decidable_eq α]
-  {s s' : alist α β} {a a' : α} {b : β a} {b' : β a'}
+  {s s' : alist β} {a a' : α} {b : β a} {b' : β a'}
   {h : a ∉ s} {h' : a' ∉ s'}
   (eq : cons s a b h = cons s' a' b' h') :
   sigma.mk a b = ⟨a', b'⟩ ∧ s = s' :=
@@ -301,11 +293,11 @@ theorem lookup_cons_self {α β} [decidable_eq α] {s a b h} :
   b ∈ lookup a (@cons α β s a b h) :=
 lookup_cons_iff.2 $ or.inl rfl
 
-@[simp] theorem cons_keys {α} {β : α → Type*} (s : alist α β)
+@[simp] theorem cons_keys {α} {β : α → Type*} (s : alist β)
   (a : α) (b : β a) (h : a ∉ s) : (alist.cons s a b h).keys = a :: s.keys := rfl
 
 def forall₂ {α} {β γ : α → Type*} (R : ∀ a, β a → γ a → Prop)
-  (l₁ : alist α β) (l₂ : alist α γ) : Prop :=
+  (l₁ : alist β) (l₂ : alist γ) : Prop :=
 list.forall₂ (sigma.forall₂ R) l₁.entries l₂.entries
 
 theorem forall₂.imp {α} {β β' : α → Type*}
@@ -313,7 +305,7 @@ theorem forall₂.imp {α} {β β' : α → Type*}
   {s s'} : forall₂ R s s' → forall₂ S s s' :=
 list.forall₂.imp $ λ a b, sigma.forall₂.imp H
 
-lemma forall₂_same {α} {β : α → Type*} {r : ∀ a, β a → β a → Prop} {s : alist α β}
+lemma forall₂_same {α} {β : α → Type*} {r : ∀ a, β a → β a → Prop} {s : alist β}
   (h : ∀ a (b : β a), sigma.mk a b ∈ s.entries → r a b b) : forall₂ r s s :=
 forall₂_same $ λ ⟨a, b⟩ m, ⟨h _ _ m⟩
 
@@ -330,12 +322,12 @@ map_sigma_fst_eq_of_forall₂_eq
 theorem forall₂.mem_iff {α} {β β' : α → Type*}
   {R : ∀ a, β a → β' a → Prop} {s s'} (H : forall₂ R s s')
   {a} : a ∈ s ↔ a ∈ s' :=
-by rw [← mem_keys, H.keys, mem_keys]
+by rw [mem_keys, H.keys, mem_keys]
 
 @[elab_as_eliminator]
 theorem forall₂.induction {α} {β γ : α → Type*}
   {R : ∀ a, β a → γ a → Prop}
-  {P : alist α β → alist α γ → Prop} {l₁ : alist α β} {l₂ : alist α γ}
+  {P : @alist α β → @alist α γ → Prop} {l₁ : alist β} {l₂ : alist γ}
   (H : forall₂ R l₁ l₂) (H0 : P ∅ ∅)
   (H1 : ∀ l₁ l₂ a b c h₁ h₂, R a b c → forall₂ R l₁ l₂ →
      P l₁ l₂ → P (cons l₁ a b h₁) (cons l₂ a c h₂)) :
@@ -347,12 +339,11 @@ begin
   rcases H_a_1 with ⟨a, b, c, h⟩,
   cases nodupkeys_cons.1 nd₁ with m₁ nd₁,
   cases nodupkeys_cons.1 nd₂ with m₂ nd₂,
-  exact H1 ⟨_, _⟩ ⟨_, _⟩ _ _ _
-    (not_exists.2 m₁) (not_exists.2 m₂) h H_a_2 (H_ih nd₁ nd₂)
+  refine H1 ⟨_, _⟩ ⟨_, _⟩ _ _ _ m₁ m₂ h H_a_2 (H_ih nd₁ nd₂),
 end
 
 theorem forall₂_cons {α} {β γ : α → Type*} {R : ∀ a, β a → γ a → Prop}
-  {l₁ : alist α β} {l₂ : alist α γ} {a b c h₁ h₂} :
+  {l₁ : alist β} {l₂ : alist γ} {a b c h₁ h₂} :
   forall₂ R (cons l₁ a b h₁) (cons l₂ a c h₂) ↔ R a b c ∧ forall₂ R l₁ l₂ :=
 ⟨by rintro (_|⟨_,_,_,_,⟨_,_,_,r⟩,h⟩); exact ⟨r, h⟩,
  λ ⟨r, h⟩, list.forall₂.cons ⟨r⟩ h⟩
@@ -369,9 +360,9 @@ begin
   rcases h₁ with rfl | h₁; rcases h₂ with rfl | h₂,
   { cases H_a_1, assumption },
   { rcases H_a_1 with ⟨i, _, b₂', _⟩,
-    cases (list.nodupkeys_cons.1 nd₂).1 _ h₂ },
+    cases (list.nodupkeys_cons.1 nd₂).1 (list.mem_keys.2 ⟨_, h₂⟩) },
   { rcases H_a_1 with ⟨i, b₁', _, _⟩,
-    cases (list.nodupkeys_cons.1 nd₁).1 _ h₁ },
+    cases (list.nodupkeys_cons.1 nd₁).1 (list.mem_keys.2 ⟨_, h₁⟩) },
   { cases H_a, cases H_b,
     exact H_ih (list.nodupkeys_cons.1 nd₁).2 h₁ (list.nodupkeys_cons.1 nd₂).2 h₂ }
 end
@@ -389,34 +380,34 @@ let ⟨b', h'⟩ := exists_mem_lookup_iff.2
 ⟨b', h', H.rel_of_lookup h h'⟩
 
 theorem replace_forall₂ {α} {β : α → Type*} [decidable_eq α]
-  (a) (b : β a) (s : alist α β) : forall₂ (kreplace_rel a b) s (replace a b s) :=
+  (a) (b : β a) (s : alist β) : forall₂ (kreplace_rel a b) s (replace a b s) :=
 kreplace_forall₂ _ _ s.2
 
 def map {α} {β γ : α → Type*}
-  (f : ∀ a, β a → γ a) (s : alist α β) : alist α γ :=
+  (f : ∀ a, β a → γ a) (s : alist β) : alist γ :=
 ⟨list.map (sigma.map id f) s.entries, by rw [
-    list.nodupkeys, list.map_map,
+    list.nodupkeys, list.keys, list.map_map,
     (by ext ⟨a, b⟩; refl : sigma.fst ∘ sigma.map id f = sigma.fst)];
   exact s.2⟩
 
 theorem map_entries {α} {β γ : α → Type*}
-  (f : ∀ a, β a → γ a) (s : alist α β) :
+  (f : ∀ a, β a → γ a) (s : alist β) :
   (map f s).entries = list.map (sigma.map id f) s.entries := rfl
 
 theorem mem_map_entries {α} {β γ : α → Type*}
-  {f : ∀ a, β a → γ a} {s : alist α β} {a} {c : γ a} :
+  {f : ∀ a, β a → γ a} {s : alist β} {a} {c : γ a} :
   sigma.mk a c ∈ (map f s).entries ↔ ∃ b : β a, sigma.mk a b ∈ s.entries ∧ f a b = c :=
 mem_map.trans ⟨
   by rintro ⟨⟨a, b⟩, h, ⟨⟩⟩; exact ⟨_, h, rfl⟩,
   by rintro ⟨b, h, ⟨⟩⟩; exact ⟨_, h, rfl⟩⟩
 
 theorem lookup_map {α} {β γ : α → Type*} [decidable_eq α]
-  {f : ∀ a, β a → γ a} {s : alist α β} {a} {c : γ a} :
+  {f : ∀ a, β a → γ a} {s : alist β} {a} {c : γ a} :
   c ∈ (map f s).lookup a ↔ ∃ b : β a, b ∈ s.lookup a ∧ f a b = c :=
 mem_lookup_iff.trans $ mem_map_entries.trans $ by simp only [mem_lookup_iff]
 
 theorem forall₂_map_left_iff {α} {β γ δ : α → Type*}
-  {r : ∀ a, γ a → δ a → Prop} {f : ∀ a, β a → γ a} {l : alist α β} {u : alist α δ} :
+  {r : ∀ a, γ a → δ a → Prop} {f : ∀ a, β a → γ a} {l : alist β} {u : alist δ} :
   alist.forall₂ r (alist.map f l) u ↔ alist.forall₂ (λ a c d, r a (f a c) d) l u :=
 begin
   unfold forall₂, refine list.forall₂_map_left_iff.trans _,
@@ -425,13 +416,13 @@ begin
 end
 
 theorem forall₂_map_right_iff {α} {β γ δ : α → Type*}
-  {r : ∀ a, β a → δ a → Prop} {f : ∀ a, γ a → δ a} {l : alist α β} {u : alist α γ} :
+  {r : ∀ a, β a → δ a → Prop} {f : ∀ a, γ a → δ a} {l : alist β} {u : alist γ} :
   alist.forall₂ r l (alist.map f u) ↔ alist.forall₂ (λ a b c, r a b (f a c)) l u :=
 ⟨λ h, (forall₂_map_left_iff.1 h.flip).flip,
  λ h, ((@forall₂_map_left_iff _ _ _ _ (λ a, flip (r a)) _ _ _).2 h.flip).flip⟩
 
 theorem lookup_replace_of_ne {α} {β : α → Type*} [decidable_eq α]
-  {a} {b : β a} {s : alist α β} {a'} (ne : a ≠ a'):
+  {a} {b : β a} {s : alist β} {a'} (ne : a ≠ a'):
   lookup a' (replace a b s) = lookup a' s :=
 begin
   ext b',
@@ -443,33 +434,33 @@ begin
 end
 
 theorem lookup_replace_self {α} {β : α → Type*} [decidable_eq α]
-  {a} {b : β a} {s : alist α β} (h : a ∈ s) :
+  {a} {b : β a} {s : alist β} (h : a ∈ s) :
   b ∈ lookup a (replace a b s) :=
 by rcases exists_mem_lookup_iff.2 h with ⟨b', h⟩;
   rcases (replace_forall₂ a b s).rel_of_lookup_right h with ⟨b'', m, _|_⟩;
   [exact m, cases h_1_h_a rfl]
 
 theorem replace_cons_self {α} {β : α → Type*} [decidable_eq α]
-  {a} {b b' : β a} {s : alist α β} (h) : replace a b' (cons s a b h) = cons s a b' h :=
+  {a} {b b' : β a} {s : alist β} (h) : replace a b' (cons s a b h) = cons s a b' h :=
 by simp [replace, cons, kreplace]; rw [lookmap_cons_some]; simp
 
 theorem replace_cons_of_ne {α} {β : α → Type*} [decidable_eq α]
-  {a} {b : β a} {s : alist α β} (h) {a'} {b' : β a'} (ne : a' ≠ a) :
+  {a} {b : β a} {s : alist β} (h) {a'} {b' : β a'} (ne : a' ≠ a) :
   ∃ h', replace a' b' (cons s a b h) = cons (replace a' b' s) a b h' :=
 ⟨mt alist.mem_replace.1 h,
   by simp [replace, cons, kreplace]; rw [lookmap_cons_none]; simp [ne]⟩
 
-@[simp] theorem entries_erase {α β} [decidable_eq α] (a : α) (s : alist α β) :
+@[simp] theorem entries_erase {α β} [decidable_eq α] (a : α) (s : alist β) :
   (erase a s).entries = s.entries.kerase a := rfl
 
-theorem lookup_erase {α β} [decidable_eq α] {s : alist α β} {a a' : α} {b' : β a'} :
+theorem lookup_erase' {α β} [decidable_eq α] {s : alist β} {a a' : α} {b' : β a'} :
   b' ∈ lookup a' (erase a s) ↔ a ≠ a' ∧ b' ∈ lookup a' s :=
 by rw [mem_lookup_iff, entries_erase, mem_kerase s.2, mem_lookup_iff]
 
-def values {α β} (s : alist α (λ _, β)) : list β := s.entries.map sigma.snd
+def values {α β} (s : alist (λ _ : α, β)) : list β := s.entries.map sigma.snd
 
 @[elab_as_eliminator]
-def rec' {α β} {C : alist α β → Sort*}
+def rec' {α β} {C : @alist α β → Sort*}
   (H0 : C ∅) (H1 : ∀ s a b h, C s → C (cons s a b h)) (s) : C s :=
 begin
   cases s with l nd,
@@ -477,7 +468,7 @@ begin
   { exact H0 },
   { cases ab with a b,
     have := list.nodupkeys_cons.1 nd,
-    exact H1 ⟨l, this.2⟩ a b (not_exists.2 this.1) (IH this.2) }
+    exact H1 ⟨l, this.2⟩ a b this.1 (IH this.2) }
 end
 
 @[simp] theorem rec'_empty {α β C H0 H1} : @rec' α β C H0 H1 ∅ = H0 := rfl
@@ -489,10 +480,6 @@ end
 end alist
 
 namespace finset
-
-theorem inter_subset_inter {α} [decidable_eq α] {s₁ s₂ t₁ t₂ : finset α}
-  (h₁ : s₁ ⊆ t₁) (h₂ : s₂ ⊆ t₂) : s₁ ∩ s₂ ⊆ t₁ ∩ t₂ :=
-λ x h, let ⟨l, r⟩ := finset.mem_inter.1 h in finset.mem_inter.2 ⟨h₁ l, h₂ r⟩
 
 theorem singleton_subset {α} {a : α} {s : finset α} :
   singleton a ⊆ s ↔ a ∈ s :=
@@ -511,16 +498,16 @@ namespace finmap
 open list
 
 theorem mem_lookup_iff {α} {β : α → Type*} [decidable_eq α]
-  {a : α} {b : β a} {s : finmap α β} :
+  {a : α} {b : β a} {s : finmap β} :
   b ∈ lookup a s ↔ sigma.mk a b ∈ s.entries :=
 induction_on s $ λ s, alist.mem_lookup_iff
 
 theorem exists_mem_lookup_iff {α} {β : α → Type*} [decidable_eq α]
-  {a : α} {s : finmap α β} : (∃ b, b ∈ lookup a s) ↔ a ∈ s :=
+  {a : α} {s : finmap β} : (∃ b, b ∈ lookup a s) ↔ a ∈ s :=
 induction_on s $ λ s, alist.exists_mem_lookup_iff
 
 theorem lookup_insert_of_neg {α} {β : α → Type*} [decidable_eq α]
-  {a : α} {b : β a} {s : finmap α β} (h : a ∉ s) {a' : α} {b' : β a'} :
+  {a : α} {b : β a} {s : finmap β} (h : a ∉ s) {a' : α} {b' : β a'} :
   b' ∈ (insert a b s).lookup a' ↔
   sigma.mk a' b' = ⟨a, b⟩ ∨ b' ∈ s.lookup a' :=
 by rw [mem_lookup_iff, mem_lookup_iff, insert_entries_of_neg h, multiset.mem_cons]
@@ -530,27 +517,27 @@ theorem lookup_insert_self {α β} [decidable_eq α] {s a b} :
 induction_on s $ λ s h,
 by simp [insert, alist.insert_eq_cons h]; exact alist.lookup_cons_self
 
-theorem lookup_erase {α β} [decidable_eq α] {s : finmap α β} {a a' : α} {b' : β a'} :
+theorem lookup_erase' {α β} [decidable_eq α] {s : finmap β} {a a' : α} {b' : β a'} :
   b' ∈ lookup a' (erase a s) ↔ a ≠ a' ∧ b' ∈ lookup a' s :=
-induction_on s $ λ s, alist.lookup_erase
+induction_on s $ λ s, alist.lookup_erase'
 
 theorem lookup_replace_of_ne {α} {β : α → Type*} [decidable_eq α]
-  {a} {b : β a} {s : finmap α β} {a'} : a ≠ a' →
+  {a} {b : β a} {s : finmap β} {a'} : a ≠ a' →
   lookup a' (replace a b s) = lookup a' s :=
 induction_on s $ λ s, alist.lookup_replace_of_ne
 
 theorem lookup_replace_self {α} {β : α → Type*} [decidable_eq α]
-  {a} {b : β a} {s : finmap α β} : a ∈ s →
+  {a} {b : β a} {s : finmap β} : a ∈ s →
   b ∈ lookup a (replace a b s) :=
 induction_on s $ λ s, alist.lookup_replace_self
 
 @[simp] theorem keys_to_finmap {α} {β : α → Type*} [decidable_eq α]
-  (s : alist α β) : keys s.to_finmap = s.keys.to_finset :=
+  (s : alist β) : keys s.to_finmap = s.keys.to_finset :=
 to_finset_eq _
 
 @[simp] theorem keys_insert {α} {β : α → Type*} [decidable_eq α]
-  (a : α) (b : β a) (s : finmap α β) :
-  (insert a b s).keys = _root_.insert a s.keys :=
-induction_on s $ λ s, by ext; simp
+  (a : α) (b : β a) (s : finmap β) :
+  (insert a b s).keys = has_insert.insert a s.keys :=
+induction_on s $ λ s, by ext; simp; by_cases a_1 = a; simp [h]
 
 end finmap

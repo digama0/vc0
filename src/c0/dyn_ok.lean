@@ -34,13 +34,13 @@ inductive of_ty : ast.exp.type → vtype → Prop
   of_ty (reg τ) vτ → of_ty (ls τs) vτs →
   of_ty (ls (τ :: τs)) (cons vτ vτs)
 
-def of_map (vs : alist ident (λ _, vtype)) : vtype :=
+def of_map (vs : alist (λ _: ident, vtype)) : vtype :=
 alist.rec' nil (λ vs x v _, cons (named x v)) vs
 
 end vtype
 
 def heap_ty := list vtype
-@[reducible] def vars_ty := finmap ident (λ _, vtype)
+@[reducible] def vars_ty := finmap (λ _: ident, vtype)
 
 def vars_ty.ok (Δ : ctx) (σ : vars_ty) : Prop :=
 ∀ i τ, τ ∈ σ.lookup i → ∃ t ∈ Δ.lookup i, vtype.of_ty (ast.exp.type.reg t) τ
@@ -53,8 +53,8 @@ instance : partial_order heap_ty :=
 { le := (<+:),
   le_refl := list.prefix_refl,
   le_trans := @list.is_prefix.trans _,
-  le_antisymm := λ l₁ l₂ h₁ h₂, list.sublist_antisymm
-    (list.sublist_of_prefix h₁) (list.sublist_of_prefix h₂) }
+  le_antisymm := λ l₁ l₂ h₁ h₂,
+    (list.sublist_of_prefix h₁).antisymm (list.sublist_of_prefix h₂) }
 
 namespace value
 

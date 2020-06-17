@@ -1,4 +1,4 @@
-import c0.ast logic.function util.basic
+import c0.ast logic.function.basic util.basic
 
 namespace c0
 open ast function
@@ -44,9 +44,9 @@ inductive ok : unop → type → type → Prop
 
 end unop
 
-@[reducible] def sdef := alist ident (λ _, c0.type)
+@[reducible] def sdef := alist (λ _ : ident, c0.type)
 
-@[reducible] def ctx := alist ident (λ _, c0.type)
+@[reducible] def ctx := alist (λ _ : ident, c0.type)
 
 namespace ast
 

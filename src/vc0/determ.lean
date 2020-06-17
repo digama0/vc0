@@ -19,7 +19,10 @@ end
 theorem step_binop.determ {op v₁ v₂ w₁ w₂}
   (h₁ : step_binop op v₁ v₂ w₁) (h₂ : step_binop op v₁ v₂ w₂) : w₁ = w₂ :=
 begin
-  cases h₁; cases h₂; try {refl},
+  generalize_hyp eo : op = op' at h₂,
+  generalize_hyp e₁ : v₁ = v₁' at h₂,
+  generalize_hyp e₂ : v₂ = v₂' at h₂,
+  induction h₁; induction h₂; cases eo; cases e₁; cases e₂; try {refl},
   cases h₁_a.determ h₂_a, refl
 end
 
@@ -169,24 +172,24 @@ begin
   cases h₁,
   case c0.step.asgn_var₁ : C lv x e K h {
     cases h₂,
-    case c0.step.asgn₁ : h' { rw h' at h, cases h },
-    case c0.step.asgn_var₁ : y h' {
+    case c0.step.asgn₁ : _ _ _ _ h' { rw h' at h, cases h },
+    case c0.step.asgn_var₁ : _ _ _ _ y h' {
       cases option.mem_unique h h', constructor } },
   case c0.step.asgn₁ : C lv e K h {
     cases h₂,
-    case c0.step.asgn_var₁ : x h' { rw h at h', cases h' },
+    case c0.step.asgn_var₁ : _ _ _ _ x h' { rw h at h', cases h' },
     case c0.step.asgn₁ : h' { constructor } },
   case c0.step.asgn₃ : H H' S η η' a v K h {
     cases h₂,
     rcases h.determ addr.eq.determ h₂_a_1 with ⟨rfl, rfl⟩,
     constructor },
-  case c0.step.asnop₂ : C a op e K h {
+  case c0.step.asnop₂ : _ C a op e K h {
     cases h₂, cases step_deref.determ h h₂_a_1, constructor },
-  case c0.step.ret₂ : C v h {
+  case c0.step.ret₂ : _ C v h {
     cases h₂, cases h.determ h₂_a, constructor },
-  case c0.step.ret_none : C v h {
+  case c0.step.ret_none : _ C v h {
     cases h₂, cases h.determ h₂_a, constructor },
-  case c0.step.nop₁ : C h {
+  case c0.step.nop₁ : _ C h {
     cases h₂, cases h.determ h₂_a, constructor },
   case c0.step.var : C i v K h {
     cases h₂, cases option.mem_unique h h₂_a, constructor },
@@ -198,50 +201,50 @@ begin
     cases h₂, cases h.determ h₂_a, constructor },
   case c0.step.call₂ : H S η η₁ f τ₁ xτs₁ s₁ vs K hb₁ sc₁ {
     cases h₂,
-    case c0.step.call₂ : η₂ τ₂ xτs₂ s₂ hb₂ sc₂ {
+    case c0.step.call₂ : _ _ _ _ _ _ η₂ τ₂ xτs₂ s₂ hb₂ sc₂ {
       cases hb₁.determ ok.ind hb₂,
       cases sc₁.determ ok.ind sc₂,
       constructor },
-    case c0.step.call_extern : H' v' h' {
+    case c0.step.call_extern : _ _ _ _ _ _ H' v' h' {
       cases ok.header_no_def h' ⟨_, _, _, hb₁⟩ } },
   case c0.step.call_extern : H S η f vs H' v K h {
     cases h₂,
-    case c0.step.call₂ : η₂ τ₂ xτs₂ s₂ hb₂ sc₂ {
+    case c0.step.call₂ : _ _ _ _ _ _ η₂ τ₂ xτs₂ s₂ hb₂ sc₂ {
       cases ok.header_no_def h ⟨_, _, _, hb₂⟩ },
     case c0.step.call_extern : H' v' h' {
       constructor, rintro ⟨⟩, refl } },
-  case c0.step.deref' : C a K h {
+  case c0.step.deref' : _ C a K h {
     cases h₂, cases h.determ h₂_a_1, constructor },
-  case c0.step.alloc_ref : C τ τ' v K tτ v0 sa {
+  case c0.step.alloc_ref : _ C τ τ' v K tτ v0 sa {
     cases h₂,
     cases tτ.determ ok.ind h₂_a,
     cases v0.determ ok.ind h₂_a_1,
     cases sa.determ h₂_a_2, constructor },
   case c0.step.alloc_arr₁ : C τ τ' e K tτ {
     cases h₂, cases tτ.determ ok.ind h₂_a, constructor },
-  case c0.step.alloc_arr₂ : C τ v K i n e v0 sa {
+  case c0.step.alloc_arr₂ : _ C τ v K i n e v0 sa {
     cases h₂,
-    case c0.step.alloc_arr₂ : v' n' e' v0' sa' {
+    case c0.step.alloc_arr₂ : _ _ _ _ _ v' n' e' v0' sa' {
       cases v0.determ ok.ind v0',
       cases int.coe_nat_inj (e.symm.trans e'),
       cases sa.determ sa', constructor },
-    case c0.step.alloc_arr_err : h' {
+    case c0.step.alloc_arr_err : _ _ _ _ h' {
       cases index_not_lt_zero e h' } },
   case c0.step.alloc_arr_err : C τ i K h {
     cases h₂,
-    case c0.step.alloc_arr₂ : v' n' e' v0' sa' {
+    case c0.step.alloc_arr₂ : _ _ _ _ _ v' n' e' v0' sa' {
       cases index_not_lt_zero e' h },
     case c0.step.alloc_arr_err : h' { constructor } },
   case c0.step.addr_index₃ : C a n K i j hl e lt {
     cases h₂,
-    case c0.step.addr_index₃ : n' j' hl' e' lt' {
+    case c0.step.addr_index₃ : _ _ _ _ n' j' hl' e' lt' {
       cases int.coe_nat_inj (e.symm.trans e'), constructor },
-    case c0.step.addr_index_err₂ : n' hl' lt' {
+    case c0.step.addr_index_err₂ : _ _ _ _ n' hl' lt' {
       cases hl.determ hl',
       cases index_not_lt_zero_or e lt lt' } },
   case c0.step.addr_index_err₂ : C a n K i hl lt {
     cases h₂,
-    case c0.step.addr_index₃ : n' j' hl' e' lt' {
+    case c0.step.addr_index₃ : _ _ _ _ n' j' hl' e' lt' {
       cases hl.determ hl',
       cases index_not_lt_zero_or e' lt' lt },
     case c0.step.addr_index_err₂ : n' hl' lt' { constructor } },
